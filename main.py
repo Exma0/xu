@@ -1,7 +1,13 @@
+from gevent import monkey; monkey.patch_all()
+import sys
+# Rekürsiyon limitini artırıyoruz (Garanti olsun diye)
+sys.setrecursionlimit(2000)
+
 from flask import Flask, request, jsonify, render_template_string
 import requests
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import gevent
+from gevent.pool import Pool
 import time
 
 app = Flask(__name__)
@@ -26,7 +32,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Analiz Paneli (Tek Dosya)</title>
+    <title>Borsa İstanbul Analiz Paneli (Gevent)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -609,7 +615,8 @@ def fetch_stock_scanner_data():
     }
 
     try:
-        response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=30)
+        # Timeout'u biraz artırdık ve verify=True bıraktık (TradingView için SSL gerekli)
+        response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=45)
         if response.status_code == 200:
             return response.json()
     except Exception as e:
@@ -684,7 +691,7 @@ def process_batch_symbol(symbol):
             support_val = round(trend_data['currentSupport'], 2)
     return symbol, market_info, support_val
 
-# --- https://xu-w1xg.onrender.com ---
+# --- ROTAS ---
 
 @app.route('/')
 def index():
@@ -717,17 +724,24 @@ def api_batch_all():
     markets = {}
     supports = {}
     
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(process_batch_symbol, sym): sym for sym in symbols}
-        for future in as_completed(futures):
-            try:
-                sym, mkt, sup = future.result()
+    # Gevent Pool kullanımı (ThreadPoolExecutor yerine)
+    pool = Pool(10)
+    jobs = [pool.spawn(process_batch_symbol, sym) for sym in symbols]
+    gevent.joinall(jobs)
+
+    for job in jobs:
+        try:
+            if job.value:
+                sym, mkt, sup = job.value
                 if mkt: markets[sym] = mkt
                 if sup: supports[sym] = sup
-            except: pass
+        except: pass
                 
     return jsonify({'markets': markets, 'supports': supports})
 
 if __name__ == '__main__':
+    # SSL uyarısını gizle
     requests.packages.urllib3.disable_warnings()
-    app.run(debug=True, port=8080)
+    from gevent.pywsgi import WSGIServer
+    http_server = WSGIServer(('0.0.0.0', 8080), app)
+    http_server.serve_forever()
