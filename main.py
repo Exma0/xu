@@ -684,7 +684,7 @@ def process_batch_symbol(symbol):
             support_val = round(trend_data['currentSupport'], 2)
     return symbol, market_info, support_val
 
-# --- ROTAS ---
+# --- https://xu-w1xg.onrender.com ---
 
 @app.route('/')
 def index():
