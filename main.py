@@ -8,8 +8,8 @@ import requests
 import json
 import gevent
 from gevent.pool import Pool
+import time
 import math
-import statistics
 
 app = Flask(__name__)
 
@@ -33,7 +33,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIST Pro Trend Analizi</title>
+    <title>BIST Yan Tahta Analizi (< 1 Milyar TL)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -104,7 +104,7 @@ HTML_TEMPLATE = """
         <header>
             <div class="header-content">
                 <div class="header-title">
-                    <i class="fas fa-chart-area"></i> BIST Pro Analiz
+                    <i class="fas fa-chart-area"></i> BIST Yan Tahta (< 1 Milyar TL)
                 </div>
                 <div class="stats">
                     <div class="stat-item"><span class="stat-label">HİSSE:</span> <span class="stat-val" id="countTotal">0</span></div>
@@ -141,7 +141,7 @@ HTML_TEMPLATE = """
                         </tr>
                     </thead>
                     <tbody id="tableBody">
-                        <tr><td colspan="11"><div class="loading-overlay"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Veriler Analiz Ediliyor...</div></td></tr>
+                        <tr><td colspan="11"><div class="loading-overlay"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Filtreye Uygun Hisseler Taranıyor...</div></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -167,8 +167,8 @@ HTML_TEMPLATE = """
         // Global State
         let stocksData = [];
         let caches = { market: {}, sup: {}, dip: {}, res: {}, brk: {} };
-        let sortCol = 9; // Hacim default
-        let sortAsc = false;
+        let sortCol = 10; // PD sıralı gelsin
+        let sortAsc = true; // Küçükten büyüğe
 
         // API Endpoints
         const API = { SCAN: '/api/scanner', BATCH: '/api/batch', CHART: '/api/chart' };
@@ -198,21 +198,22 @@ HTML_TEMPLATE = """
                 let json = await res.json();
                 if(!json.data) throw new Error("Veri yok");
                 
-                // Filtreleme: PD < 100 Milyar ve PD > 0
+                // --- FİLTRELEME ALANI ---
+                // Sadece piyasa değeri 1 Milyar (1,000,000,000) ve altı olanları al
                 stocksData = json.data.filter(x => {
                    let pd = parseFloat(x.d[15]||0);
-                   return pd > 0; // Tüm hisseleri getir
+                   return pd > 0 && pd <= 1000000000;
                 });
 
                 renderTable();
                 updateStats();
 
-                // Batch Loading
+                // Sadece filtreden geçenleri analiz et
                 let symbols = stocksData.map(x => x.d[0]);
                 for(let i=0; i<symbols.length; i+=40) {
                     let chunk = symbols.slice(i, i+40).join(',');
                     loadBatch(chunk);
-                    await new Promise(r => setTimeout(r, 50)); // Rate limit koruması
+                    await new Promise(r => setTimeout(r, 50)); 
                 }
             } catch(e) {
                 document.getElementById('errorBox').style.display='block';
@@ -229,13 +230,13 @@ HTML_TEMPLATE = """
                 Object.assign(caches.dip, data.dip);
                 Object.assign(caches.res, data.res);
                 Object.assign(caches.brk, data.brk);
-                renderTable(); // Her partide tabloyu güncelle
+                renderTable(); 
             } catch(e) { console.error(e); }
         }
 
         function sort(col) {
             if(sortCol === col) sortAsc = !sortAsc;
-            else { sortCol = col; sortAsc = (col < 2); } // İsim/Pazar harici default azalan
+            else { sortCol = col; sortAsc = (col < 2); } 
             renderTable();
         }
 
@@ -301,8 +302,8 @@ HTML_TEMPLATE = """
 
                 // Renkler
                 let cChg = chg>0?'val-up':(chg<0?'val-down':'val-neu');
-                let cSup = (supDist !== '-' && parseFloat(supDist) < 2) ? 'val-down' : 'val-up'; // Desteğe %2 yaklaştıysa kırmızı
-                let cRes = (resDist !== '-' && parseFloat(resDist) < 2) ? 'val-up' : 'val-down'; // Dirence %2 yaklaştıysa yeşil
+                let cSup = (supDist !== '-' && parseFloat(supDist) < 2) ? 'val-down' : 'val-up'; 
+                let cRes = (resDist !== '-' && parseFloat(resDist) < 2) ? 'val-up' : 'val-down';
 
                 return `<tr>
                     <td class="col-symbol" onclick="openChart('${sym}')">${sym}</td>
@@ -352,10 +353,6 @@ HTML_TEMPLATE = """
             let dates = raw.map(x => new Date(x.t*1000).toISOString().split('T')[0]);
             let o = raw.map(x=>x.o), h = raw.map(x=>x.h), l = raw.map(x=>x.l), c = raw.map(x=>x.c);
 
-            // Lines (Backend'den hesaplanan verileri görselleştirmek için tekrar JS'de basit çizim)
-            // Not: Gerçek linear regression çizgisini backend'den array olarak da isteyebiliriz ama
-            // basitlik adına burada sadece mumları ve varsa backend hesap değerlerini çizdireceğiz.
-            
             let trace = {
                 x: dates, open: o, high: h, low: l, close: c,
                 type: 'candlestick', name: sym,
@@ -398,19 +395,15 @@ def get_data_from_ideal(url):
     try:
         r = requests.get(url, verify=False, timeout=8)
         if r.status_code == 200:
-            # iDeal data genellikle iso-8859-9 (Turkish) gelir
             return json.loads(r.content.decode('iso-8859-9'))
     except: return None
 
-# --- GELİŞMİŞ TREND ALGORİTMASI (Linear Regression & Pivots) ---
+# --- GELİŞMİŞ TREND ALGORİTMASI ---
 def calc_trend_advanced(candles):
-    # candles format: [{'o':..., 'h':..., 'l':..., 'c':...}, ...] or list of lists
-    # Veriyi normalize et
     highs = []
     lows = []
     closes = []
     
-    # Veri formatını güvenli hale getir
     if not candles: return None
     
     for c in candles:
@@ -418,28 +411,24 @@ def calc_trend_advanced(candles):
             highs.append(float(c.get('fYuksek', c.get('h', 0))))
             lows.append(float(c.get('fDusuk', c.get('l', 0))))
             closes.append(float(c.get('fKapanis', c.get('c', 0))))
-        elif isinstance(c, list) and len(c) >= 5: # [date, o, h, l, c]
+        elif isinstance(c, list) and len(c) >= 5: 
             highs.append(float(c[2]))
             lows.append(float(c[3]))
             closes.append(float(c[4]))
             
     n = len(closes)
-    if n < 60: return None # Yetersiz veri
+    if n < 60: return None
 
-    # 1. DESTEK ANALİZİ (Linear Regression on Local Minima)
-    # Yerel dipleri bul (Window = 5)
+    # 1. DESTEK ANALİZİ
     local_min_indices = []
     for i in range(2, n-2):
         if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
             local_min_indices.append(i)
     
-    # Eğer yeterince dip yoksa en düşüğü al
     if len(local_min_indices) < 2:
         support_val = min(lows)
         support_slope = 0
     else:
-        # Basit Lineer Regresyon: y = mx + c
-        # X: indices, Y: prices
         sum_x = sum(local_min_indices)
         sum_y = sum([lows[i] for i in local_min_indices])
         sum_xy = sum([i * lows[i] for i in local_min_indices])
@@ -448,15 +437,10 @@ def calc_trend_advanced(candles):
         
         try:
             slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
-        except: slope = 0 # Sıfıra bölme hatası olursa
+        except: slope = 0
         
-        # Intercept (c) hesapla: Ortalama çizgiyi verir.
-        # Ancak DESTEK çizgisi en alttan geçmeli.
-        # Bu yüzden tüm dipler için (y - mx) hesaplayıp EN KÜÇÜĞÜNÜ (min_c) alıyoruz.
         min_intercept = float('inf')
         for i in range(n):
-            # Sadece dipleri değil, tüm düşükleri kontrol et ki fiyat çizginin altına inmesin
-            # Performans için sadece yerel dipleri kontrol edelim
             val = lows[i] - slope * i
             if val < min_intercept:
                 min_intercept = val
@@ -464,17 +448,16 @@ def calc_trend_advanced(candles):
         support_slope = slope
         current_support = support_slope * (n-1) + min_intercept
 
-    # Destek Analizi: Max Sarkma
     max_dip = 0.0
     for i in range(n):
-        line_val = support_slope * i + (current_support - support_slope*(n-1)) # Denklemi geri kur
+        line_val = support_slope * i + (current_support - support_slope*(n-1))
         if line_val > 0:
             diff = lows[i] - line_val
-            if diff < 0: # Çizginin altında
+            if diff < 0: 
                 pct = (diff / line_val) * 100
                 if pct < max_dip: max_dip = pct
 
-    # 2. DİRENÇ ANALİZİ (Linear Regression on Local Maxima)
+    # 2. DİRENÇ ANALİZİ
     local_max_indices = []
     for i in range(2, n-2):
         if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
@@ -494,7 +477,6 @@ def calc_trend_advanced(candles):
             slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
         except: slope = 0
         
-        # Intercept: Direnç çizgisi en üstten geçmeli -> Max Intercept
         max_intercept = float('-inf')
         for i in range(n):
             val = highs[i] - slope * i
@@ -504,7 +486,6 @@ def calc_trend_advanced(candles):
         res_slope = slope
         current_resistance = res_slope * (n-1) + max_intercept
 
-    # Direnç Analizi: Max Aşım (Breakout)
     max_breakout = 0.0
     for i in range(n):
         line_val = res_slope * i + (current_resistance - res_slope*(n-1))
@@ -520,17 +501,15 @@ def calc_trend_advanced(candles):
     }
 
 def process_symbol(sym):
-    # Market Bilgisi
     mkt = None
     try:
         r = requests.get(f"{IDEAL_DATA_URL}/cmd=SirketProfil?symbol={sym}?lang=tr", verify=False, timeout=5)
         if r.status_code==200: mkt = json.loads(r.content.decode('iso-8859-9')).get('Piyasa')
     except: pass
 
-    # Grafik Verisi
     chart = []
     try:
-        r = requests.get(f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={sym}?periyot=G?bar=400?lang=tr", verify=False, timeout=8) # Son 400 bar yeterli
+        r = requests.get(f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={sym}?periyot=G?bar=400?lang=tr", verify=False, timeout=8)
         if r.status_code==200: chart = json.loads(r.content.decode('iso-8859-9'))
     except: pass
 
@@ -544,7 +523,6 @@ def home(): return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/scanner', methods=['GET', 'POST'])
 def scanner():
-    # TradingView Scanner Payload
     payload = {
         "columns": ["name","description","logoid","update_mode","type","typespecs","close","pricescale","minmov","fractional","minmove2","currency","change","volume","relative_volume_10d_calc","market_cap_basic","fundamental_currency_code","price_earnings_ttm","earnings_per_share_diluted_ttm","earnings_per_share_diluted_yoy_growth_ttm","dividends_yield_current","sector.tr","market","sector","AnalystRating","AnalystRating.tr","High.All","Low.All","RSI"],
         "ignore_unknown_fields": False, "options": {"lang": "tr"}, "range": [0, 9999], 
@@ -559,19 +537,13 @@ def scanner():
 @app.route('/api/chart')
 def chart():
     s = request.args.get('s')
-    # Grafik için temiz format döndür
     try:
         r = requests.get(f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={s}?periyot=G?bar=500?lang=tr", verify=False, timeout=10)
         raw = json.loads(r.content.decode('iso-8859-9'))
-        # Frontend için minimize et: [time, open, high, low, close]
         clean = []
         if isinstance(raw, list):
             for x in raw:
-                # ideal data formatı bazen değişebilir, kontrol et
-                # Genelde: {'Date':..., 'fAcilis':...} veya list
                 if isinstance(x, dict):
-                    # Tarih parse (YYYY-MM-DD HH:MM:SS) -> timestamp
-                    # Basitlik için sadece kapanışları alıyoruz gibi görünüyor ama mum grafiği için OHLC lazım
                     clean.append({
                         't': int(time.mktime(time.strptime(x['Date'].split('.')[0], "%Y-%m-%d %H:%M:%S"))), 
                         'o': x['fAcilis'], 'h': x['fYuksek'], 'l': x['fDusuk'], 'c': x['fKapanis']
@@ -586,7 +558,7 @@ def batch():
     
     out = {'market':{}, 'sup':{}, 'dip':{}, 'res':{}, 'brk':{}}
     
-    pool = Pool(15) # Concurrent workers
+    pool = Pool(15) 
     jobs = [pool.spawn(process_symbol, s) for s in syms]
     gevent.joinall(jobs)
     
