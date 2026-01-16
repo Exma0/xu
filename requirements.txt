@@ -4,3 +4,4 @@ gevent
 gunicorn
 urllib3
 ujson
+numpy
