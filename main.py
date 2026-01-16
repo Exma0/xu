@@ -9,6 +9,7 @@ import json
 import gevent
 from gevent.pool import Pool
 import time
+import math
 
 app = Flask(__name__)
 
@@ -32,7 +33,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Analiz Paneli (Gevent)</title>
+    <title>Borsa İstanbul Analiz Paneli</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -479,33 +480,87 @@ HTML_TEMPLATE = """
         
         function calculateMainTrendLines(highs, lows, dates) {
             const n = highs.length;
-            if (n < 2) return {};
+            if (n < 60) return {};
 
-            // 1. Mutlak Zirve
-            let absoluteMaxVal = -Infinity, absoluteMaxIdx = 0;
-            for(let i = 0; i < n; i++) {
-                if(highs[i] > absoluteMaxVal) { absoluteMaxVal = highs[i]; absoluteMaxIdx = i; }
+            // Linear Regression hesaplaması için yardımcı fonksiyonlar
+            function calculateLinearRegression(indices, values) {
+                const sumX = indices.reduce((a, b) => a + b, 0);
+                const sumY = values.reduce((a, b) => a + b, 0);
+                const sumXY = indices.reduce((a, b, i) => a + b * values[i], 0);
+                const sumXX = indices.reduce((a, b) => a + b * b, 0);
+                const count = indices.length;
+                
+                const slope = (count * sumXY - sumX * sumY) / (count * sumXX - sumX * sumX);
+                const intercept = (sumY - slope * sumX) / count;
+                return { slope, intercept };
             }
-            let secondMaxVal = -Infinity, secondMaxIdx = n - 1;
-            const searchStart = absoluteMaxIdx + Math.floor(n * 0.1);
-            for(let i = searchStart; i < n; i++) {
-                if(highs[i] > secondMaxVal) { secondMaxVal = highs[i]; secondMaxIdx = i; }
+
+            // Tüm veriler üzerinden genel eğim (slope) hesapla
+            // Bu, trendin ana yönünü belirler
+            const indices = Array.from({length: n}, (_, i) => i);
+            
+            // 1. DESTEK (Lows üzerinden)
+            // Yerel dipleri bul (Local Minima)
+            const localMinIndices = [];
+            const localMinValues = [];
+            for(let i=2; i<n-2; i++) {
+                if(lows[i] < lows[i-1] && lows[i] < lows[i-2] && lows[i] < lows[i+1] && lows[i] < lows[i+2]) {
+                    localMinIndices.push(i);
+                    localMinValues.push(lows[i]);
+                }
             }
-            const absoluteSlope = (highs[secondMaxIdx] - highs[absoluteMaxIdx]) / (secondMaxIdx - absoluteMaxIdx);
+            
+            let supportSlope = 0;
+            let supportIntercept = 0;
+            
+            if (localMinIndices.length >= 2) {
+                // Yerel dipler üzerinden regresyon hesabı
+                const reg = calculateLinearRegression(localMinIndices, localMinValues);
+                supportSlope = reg.slope;
+                
+                // Kanalın en altına oturması için intercept'i ayarla (en düşük sapmayı bul)
+                let minOffset = Infinity;
+                for(let i=0; i<n; i++) {
+                    const theoreticalVal = supportSlope * i;
+                    const diff = lows[i] - theoreticalVal;
+                    if(diff < minOffset) minOffset = diff;
+                }
+                supportIntercept = minOffset;
+            } else {
+                // Yeterli dip yoksa basitçe en düşük noktadan düz çizgi
+                supportSlope = 0;
+                supportIntercept = Math.min(...lows);
+            }
 
-            // 2. Ana Direnç
-            let maxVal_r = -Infinity, maxIdx_r = 0;
-            for(let i = 0; i < n * 0.3; i++) { if(highs[i] > maxVal_r) { maxVal_r = highs[i]; maxIdx_r = i; } }
-            let lastMaxVal_r = -Infinity, lastMaxIdx_r = n - 1;
-            for(let i = n - 1; i > n * 0.7; i--) { if(highs[i] > lastMaxVal_r) { lastMaxVal_r = highs[i]; lastMaxIdx_r = i; } }
-            const resistanceSlope = (highs[lastMaxIdx_r] - highs[maxIdx_r]) / (lastMaxIdx_r - maxIdx_r);
+            // 2. DİRENÇ (Highs üzerinden)
+            const localMaxIndices = [];
+            const localMaxValues = [];
+            for(let i=2; i<n-2; i++) {
+                if(highs[i] > highs[i-1] && highs[i] > highs[i-2] && highs[i] > highs[i+1] && highs[i] > highs[i+2]) {
+                    localMaxIndices.push(i);
+                    localMaxValues.push(highs[i]);
+                }
+            }
 
-            // 3. Ana Destek
-            let minVal = Infinity, minIdx = 0;
-            for(let i = 0; i < n * 0.3; i++) { if(lows[i] < minVal) { minVal = lows[i]; minIdx = i; } }
-            let lastMinVal = Infinity, lastMinIdx = n - 1;
-            for(let i = n - 1; i > n * 0.7; i--) { if(lows[i] < lastMinVal) { lastMinVal = lows[i]; lastMinIdx = i; } }
-            const supportSlope = (lows[lastMinIdx] - lows[minIdx]) / (lastMinIdx - minIdx);
+            let resistanceSlope = 0;
+            let resistanceIntercept = 0;
+
+            if (localMaxIndices.length >= 2) {
+                const reg = calculateLinearRegression(localMaxIndices, localMaxValues);
+                resistanceSlope = reg.slope;
+                
+                // Kanalın en üstüne oturması için intercept ayarla
+                let maxOffset = -Infinity;
+                for(let i=0; i<n; i++) {
+                    const theoreticalVal = resistanceSlope * i;
+                    const diff = highs[i] - theoreticalVal;
+                    if(diff > maxOffset) maxOffset = diff;
+                }
+                resistanceIntercept = maxOffset;
+            } else {
+                resistanceSlope = 0;
+                resistanceIntercept = Math.max(...highs);
+            }
 
             const projectionDays = 30;
             const extendedDates = [...dates];
@@ -516,52 +571,86 @@ HTML_TEMPLATE = """
                 extendedDates.push(nextDate.toISOString().split('T')[0]);
             }
 
-            const absoluteLine = [], resistanceLine = [], supportLine = [], midTrendLine = [];
+            const resistanceLine = [], supportLine = [], midTrendLine = [];
             for (let i = 0; i < extendedDates.length; i++) {
-                const absVal = highs[absoluteMaxIdx] + absoluteSlope * (i - absoluteMaxIdx);
-                const resVal = highs[maxIdx_r] + resistanceSlope * (i - maxIdx_r);
-                const supVal = lows[minIdx] + supportSlope * (i - minIdx);
-                absoluteLine.push(absVal);
+                const resVal = resistanceSlope * i + resistanceIntercept;
+                const supVal = supportSlope * i + supportIntercept;
+                
                 resistanceLine.push(resVal);
                 supportLine.push(supVal);
                 midTrendLine.push((resVal + supVal) / 2);
             }
 
             return {
-                absolutePeak: { x: extendedDates, y: absoluteLine, type: 'scatter', mode: 'lines', name: 'Zirve Trendi', line: { color: '#3b82f6', width: 2, dash: 'dot' } },
+                absolutePeak: { x: [], y: [], type: 'scatter' }, // Artık kullanılmıyor ama yapı bozulmasın diye boş
                 resistance: { x: extendedDates, y: resistanceLine, type: 'scatter', mode: 'lines', name: 'Ana Direnç', line: { color: '#ef4444', width: 2 } },
                 support: { x: extendedDates, y: supportLine, type: 'scatter', mode: 'lines', name: 'Ana Destek', line: { color: '#10b981', width: 2 } },
                 midTrend: { x: extendedDates, y: midTrendLine, type: 'scatter', mode: 'lines', name: 'Trend Merkezi', line: { color: '#f59e0b', width: 2, dash: 'dash' } }
             };
         }
+        
+        
 
         function calculateCupPattern(highs, lows, dates) {
             const n = highs.length;
             if (n < 60) return null;
-            let leftPeakVal = -Infinity, leftPeakIdx = 0;
-            for (let i = 0; i < n - 20; i++) { if (highs[i] > leftPeakVal) { leftPeakVal = highs[i]; leftPeakIdx = i; } }
-            let bottomVal = Infinity, bottomIdx = leftPeakIdx;
-            for (let i = leftPeakIdx; i < n; i++) { if (lows[i] < bottomVal) { bottomVal = lows[i]; bottomIdx = i; } }
-            let rightPeakVal = -Infinity, rightPeakIdx = n - 1;
-            for (let i = bottomIdx; i < n; i++) { if (highs[i] > rightPeakVal) { rightPeakVal = highs[i]; rightPeakIdx = i; } }
+
+            // Daha gelişmiş Çanak Tespiti
+            // Strateji: Sol Tepe, Dip ve Sağ Tepe arasındaki ilişkiyi ve zamanı kontrol et.
             
-            const cupDepth = leftPeakVal - bottomVal;
-            if (cupDepth <= 0 || (bottomIdx - leftPeakIdx) < 10 || (rightPeakIdx - bottomIdx) < 10) return null;
-            const targetVal = leftPeakVal + cupDepth;
+            // 1. En düşük noktayı bul (Orta bölge)
+            let minVal = Infinity, minIdx = 0;
+            // Ortadaki %60'lık kısımda dip ara (Kenarlara çok yakın olmasın)
+            const startSearch = Math.floor(n * 0.2);
+            const endSearch = Math.floor(n * 0.8);
+            
+            for(let i = startSearch; i < endSearch; i++) {
+                if(lows[i] < minVal) { minVal = lows[i]; minIdx = i; }
+            }
+
+            // 2. Sol Tepeyi Bul (Dip noktasından öncesi)
+            let leftPeakVal = -Infinity, leftPeakIdx = 0;
+            for(let i = 0; i < minIdx; i++) {
+                if(highs[i] > leftPeakVal) { leftPeakVal = highs[i]; leftPeakIdx = i; }
+            }
+
+            // 3. Sağ Tepeyi Bul (Dip noktasından sonrası)
+            let rightPeakVal = -Infinity, rightPeakIdx = n - 1;
+            for(let i = minIdx + 1; i < n; i++) {
+                if(highs[i] > rightPeakVal) { rightPeakVal = highs[i]; rightPeakIdx = i; }
+            }
+
+            // Kriterler:
+            // A. Formasyon Süresi: En az 20 bar
+            if ((rightPeakIdx - leftPeakIdx) < 20) return null;
+            
+            // B. Derinlik: Çanak çok sığ olmamalı (en az %5)
+            const cupDepth = Math.max(leftPeakVal, rightPeakVal) - minVal;
+            if ((cupDepth / minVal) < 0.05) return null;
+            
+            // C. Simetri: Sol ve Sağ tepeler birbirine yakın olmalı (Max %20 fark)
+            const peakDiff = Math.abs(leftPeakVal - rightPeakVal);
+            const avgPeak = (leftPeakVal + rightPeakVal) / 2;
+            if ((peakDiff / avgPeak) > 0.20) return null; 
+
+            // Eğer buraya geldiyse geçerli bir çanak adayıdır
+            const targetVal = rightPeakVal + cupDepth;
 
             const extendedDates = [...dates];
-            const projectionDays = 90;
+            const projectionDays = 60;
             const lastDate = new Date(dates[dates.length - 1]);
             for (let i = 1; i <= projectionDays; i++) {
                 const nextDate = new Date(lastDate);
                 nextDate.setDate(lastDate.getDate() + i);
                 extendedDates.push(nextDate.toISOString().split('T')[0]);
             }
+            
+            
 
             return {
-                cup: { x: [dates[leftPeakIdx], dates[bottomIdx], dates[rightPeakIdx]], y: [leftPeakVal, bottomVal, highs[rightPeakIdx]], type: 'scatter', mode: 'lines', name: 'Çanak', line: { color: '#a855f7', width: 4, shape: 'spline' } },
-                target: { x: [dates[leftPeakIdx], extendedDates[extendedDates.length - 1]], y: [targetVal, targetVal], type: 'scatter', mode: 'lines', name: `Katlama: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
-                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
+                cup: { x: [dates[leftPeakIdx], dates[minIdx], dates[rightPeakIdx]], y: [leftPeakVal, minVal, rightPeakVal], type: 'scatter', mode: 'lines+markers', name: 'Çanak', line: { color: '#a855f7', width: 3, shape: 'spline' } },
+                target: { x: [dates[rightPeakIdx], extendedDates[extendedDates.length - 1]], y: [rightPeakVal, targetVal], type: 'scatter', mode: 'lines', name: `Hedef: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
+                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, rightPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
             };
         }
 
@@ -612,7 +701,7 @@ HTML_TEMPLATE = """
                 line: { color: '#6b7280', width: 1, dash: 'dot' }
             };
 
-            const allTraces = [trace1, mainTrends.absolutePeak, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
+            const allTraces = [trace1, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
             if (cupPattern) { allTraces.push(cupPattern.cup); allTraces.push(cupPattern.target); allTraces.push(cupPattern.base); }
 
             const layout = {
@@ -694,6 +783,7 @@ def fetch_chart_data(symbol):
         pass
     return []
 
+# --- DÜZELTİLEN FONKSİYON: Lineer Regresyon ile Profesyonel Destek/Direnç ---
 def calculate_trend_levels(raw_data):
     lows = []
     highs = []
@@ -710,54 +800,106 @@ def calculate_trend_levels(raw_data):
             if l > 0: lows.append(l)
             if h > 0: highs.append(h)
     
-    if len(lows) < 50: return None
-    
     n = len(lows)
+    # Hata kontrolü: En az 20 bar olsun
+    if n < 20: return None
     
-    # --- DESTEK HESAPLAMA ---
-    min_idx1, min_val1 = 0, lows[0]
-    limit_low = int(n * 0.3)
-    for i in range(limit_low):
-        if lows[i] < min_val1: min_val1, min_idx1 = lows[i], i
-        
-    min_idx2, min_val2 = n - 1, lows[n - 1]
-    limit_high = int(n * 0.7)
-    for i in range(n - 1, limit_high, -1):
-        if lows[i] < min_val2: min_val2, min_idx2 = lows[i], i
-        
-    support_slope = (lows[min_idx2] - lows[min_idx1]) / (min_idx2 - min_idx1) if min_idx2 != min_idx1 else 0
-    current_support = lows[min_idx1] + support_slope * (n - 1 - min_idx1)
+    # -------------------------------------------------------------
+    # 1. DESTEK HESAPLAMASI (Linear Regression Channel Lower Line)
+    # -------------------------------------------------------------
     
+    # Yerel dipleri bul (Local Minima) - Gürültüyü azaltmak için
+    local_min_indices = []
+    local_min_values = []
+    for i in range(2, n-2):
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            local_min_indices.append(i)
+            local_min_values.append(lows[i])
+            
+    # Eğer yeterince yerel dip yoksa, tüm datayı kullanabiliriz veya uçları alabiliriz
+    if len(local_min_indices) < 3:
+        # Fallback: Basit Min-Max
+        support_val = min(lows)
+        support_slope = 0
+        current_support = support_val
+    else:
+        # Least Squares Method (En Küçük Kareler)
+        sum_x = sum(local_min_indices)
+        sum_y = sum(local_min_values)
+        sum_xy = sum([local_min_indices[i] * local_min_values[i] for i in range(len(local_min_indices))])
+        sum_xx = sum([i*i for i in local_min_indices])
+        count = len(local_min_indices)
+        
+        try:
+            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
+        except: slope = 0
+        
+        # Intercept (c) hesapla. Destek çizgisi tüm fiyatların ALTINDA olmalı.
+        # Bu yüzden hesaplanan eğime (slope) göre tüm barların sapmasını (diff) bulup
+        # en alt noktaya (minimum sapma) çizgiyi kaydırıyoruz.
+        min_intercept = float('inf')
+        for i in range(n):
+            val = lows[i] - slope * i
+            if val < min_intercept:
+                min_intercept = val
+        
+        support_slope = slope
+        # Şu anki bar (n-1) için destek değeri
+        current_support = support_slope * (n-1) + min_intercept
+
     # Destek Altı Max Sarkma
     max_dip_percent = 0.0
     for i in range(n):
-        date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
+        date_support_val = support_slope * i + (current_support - support_slope*(n-1))
         if date_support_val > 0:
             diff = lows[i] - date_support_val
-            if diff < 0:
+            if diff < 0: # Desteğin altına sarkmış
                 dip_pct = (diff / date_support_val) * 100
                 if dip_pct < max_dip_percent:
                     max_dip_percent = dip_pct
                     
-    # --- DİRENÇ HESAPLAMA ---
-    max_idx1, max_val1 = 0, highs[0]
-    for i in range(limit_low):
-        if highs[i] > max_val1: max_val1, max_idx1 = highs[i], i
+    # -------------------------------------------------------------
+    # 2. DİRENÇ HESAPLAMASI (Linear Regression Channel Upper Line)
+    # -------------------------------------------------------------
+    local_max_indices = []
+    local_max_values = []
+    for i in range(2, n-2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            local_max_indices.append(i)
+            local_max_values.append(highs[i])
+            
+    if len(local_max_indices) < 3:
+        res_val = max(highs)
+        res_slope = 0
+        current_resistance = res_val
+    else:
+        sum_x = sum(local_max_indices)
+        sum_y = sum(local_max_values)
+        sum_xy = sum([local_max_indices[i] * local_max_values[i] for i in range(len(local_max_indices))])
+        sum_xx = sum([i*i for i in local_max_indices])
+        count = len(local_max_indices)
         
-    max_idx2, max_val2 = n - 1, highs[n - 1]
-    for i in range(n - 1, limit_high, -1):
-        if highs[i] > max_val2: max_val2, max_idx2 = highs[i], i
+        try:
+            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
+        except: slope = 0
         
-    resistance_slope = (highs[max_idx2] - highs[max_idx1]) / (max_idx2 - max_idx1) if max_idx2 != max_idx1 else 0
-    current_resistance = highs[max_idx1] + resistance_slope * (n - 1 - max_idx1)
-    
+        # Intercept: Direnç çizgisi tüm fiyatların ÜSTÜNDE olmalı. Max sapmaya kaydır.
+        max_intercept = float('-inf')
+        for i in range(n):
+            val = highs[i] - slope * i
+            if val > max_intercept:
+                max_intercept = val
+                
+        res_slope = slope
+        current_resistance = res_slope * (n-1) + max_intercept
+
     # Direnç Üstü Max Çıkış (Breakout)
     max_breakout_percent = 0.0
     for i in range(n):
-        date_res_val = highs[max_idx1] + resistance_slope * (i - max_idx1)
+        date_res_val = res_slope * i + (current_resistance - res_slope*(n-1))
         if date_res_val > 0:
             diff = highs[i] - date_res_val
-            if diff > 0: # Direncin üzerinde
+            if diff > 0: # Direncin üzerine çıkmış
                 brk_pct = (diff / date_res_val) * 100
                 if brk_pct > max_breakout_percent:
                     max_breakout_percent = brk_pct
