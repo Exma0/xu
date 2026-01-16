@@ -32,7 +32,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Analiz Paneli (Tam Trend Analizi)</title>
+    <title>Borsa İstanbul Trend Analizi</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -40,54 +40,62 @@ HTML_TEMPLATE = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; background: #f8f9fa; font-family: 'Inter', sans-serif; color: #333; }
-        .container { max-width: 1600px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
-        header { background: white; padding: 24px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .header-content { padding: 0 24px; display: flex; justify-content: space-between; align-items: center; }
-        .header-title { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; }
+        /* Container ekranın %98'ini kaplasın */
+        .container { max-width: 98%; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+        header { background: white; padding: 16px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .header-content { padding: 0 20px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; }
         .header-title i { color: #0066cc; }
-        .stats { display: flex; gap: 24px; flex: 1; margin-left: 40px; }
+        .stats { display: flex; gap: 20px; flex: 1; margin-left: 30px; }
         .stat { display: flex; flex-direction: column; }
-        .stat-label { font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-        .stat-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+        .stat-label { font-size: 11px; color: #666; text-transform: uppercase; font-weight: 600; }
+        .stat-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
         .stat-value.positive { color: #10b981; }
         .stat-value.negative { color: #ef4444; }
-        main { flex: 1; padding: 24px; overflow: auto; }
+        main { flex: 1; padding: 16px; overflow: auto; }
         .table-wrapper { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; }
-        thead { background: #f3f4f6; }
-        th { padding: 16px; text-align: left; font-size: 13px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; cursor: pointer; user-select: none; }
-        th:hover { background: #e5e7eb; }
-        td { padding: 14px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; } /* Sabit tablo düzeni */
+        thead { background: #f3f4f6; position: sticky; top: 0; z-index: 10; }
+        
+        /* Daha kompakt hücreler */
+        th { padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        th:hover { background: #e5e7eb; color: #000; }
+        td { padding: 8px 8px; border-bottom: 1px solid #f0f0f0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         tr:hover { background: #f9fafb; }
-        .symbol { font-weight: 600; color: #0066cc; cursor: pointer; }
+        
+        .symbol { font-weight: 700; color: #0066cc; cursor: pointer; }
         .symbol:hover { text-decoration: underline; }
-        .pazar { color: #555; font-size: 13px; font-weight: 500; }
-        .change { font-weight: 600; text-align: right; }
+        .pazar { color: #666; font-size: 11px; font-weight: 500; }
+        
+        .change { font-weight: 700; text-align: right; }
         .change.up { color: #10b981; }
         .change.down { color: #ef4444; }
-        .no-data { text-align: center; padding: 60px 20px; color: #999; }
-        .error-message { background: #fef2f2; color: #991b1b; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; display: none; }
+        
+        .no-data { text-align: center; padding: 40px; color: #999; }
+        .error-message { background: #fef2f2; color: #991b1b; padding: 10px; border-radius: 6px; margin-bottom: 10px; display: none; }
         .error-message.show { display: block; }
-        .download-btn { background: #10b981; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-left: 8px; }
+        
+        .download-btn { background: #10b981; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; margin-left: 8px; }
         .download-btn:hover { background: #059669; }
         .download-btn:disabled { background: #ccc; cursor: not-allowed; }
         .download-btn:nth-child(2) { background: #3b82f6; }
         .download-btn:nth-child(2):hover { background: #2563eb; }
+        
+        /* Modal Stilleri */
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); }
         .modal.show { display: flex; }
-        .modal-content { background-color: white; margin: auto; padding: 20px; border-radius: 8px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; position: relative; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 15px; }
-        .modal-title { font-size: 20px; font-weight: 700; color: #333; }
-        .close-btn { background: none; border: none; font-size: 28px; cursor: pointer; color: #999; }
-        .close-btn:hover { color: #333; }
-        .chart-container { position: relative; height: 1440px; margin-top: 20px; }
+        .modal-content { background-color: white; margin: auto; padding: 15px; border-radius: 8px; width: 95%; max-width: 1400px; max-height: 95vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+        .modal-title { font-size: 18px; font-weight: 700; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
+        .chart-container { position: relative; height: 80vh; }
         #chartCanvas { height: 100%; width: 100%; }
         .loading { text-align: center; padding: 50px; color: #666; }
-        .loading i { font-size: 48px; margin-bottom: 20px; }
         
-        /* Yeni Tablo Sütunları İçin */
-        .trend-col-support { background-color: rgba(16, 185, 129, 0.05); }
-        .trend-col-resistance { background-color: rgba(239, 68, 68, 0.05); }
+        /* Özel Arka Planlar */
+        .bg-support { background-color: rgba(16, 185, 129, 0.04); }
+        .bg-resistance { background-color: rgba(239, 68, 68, 0.04); }
+        .border-left { border-left: 2px solid #e5e7eb; }
     </style>
 </head>
 <body>
@@ -95,12 +103,12 @@ HTML_TEMPLATE = """
         <header>
             <div class="header-content">
                 <div class="header-title">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Hisse Senetleri</span>
+                    <i class="fas fa-layer-group"></i>
+                    <span>BIST Trend Analizi</span>
                 </div>
                 <div class="stats">
                     <div class="stat">
-                        <div class="stat-label">Toplam</div>
+                        <div class="stat-label">Hisse</div>
                         <div class="stat-value" id="totalCount">0</div>
                     </div>
                     <div class="stat">
@@ -127,24 +135,25 @@ HTML_TEMPLATE = """
                 <table id="stockTable">
                     <thead>
                         <tr>
-                            <th onclick="sortStocks(0)">Hisse</th>
-                            <th style="text-align: right;" onclick="sortStocks(1)">Fiyat</th>
-                            <th style="text-align: right;" onclick="sortStocks(2)">Değ.%</th>
+                            <th style="width: 80px;" onclick="sortStocks(0)">Hisse</th>
+                            <th style="width: 100px;" onclick="sortStocks(1)">Pazar</th>
+                            <th style="text-align: right; width: 90px;" onclick="sortStocks(2)">Fiyat</th>
+                            <th style="text-align: right; width: 80px;" onclick="sortStocks(3)">Değ.%</th>
                             
-                            <th style="text-align: right; border-left: 2px solid #ddd;" class="trend-col-support" onclick="sortStocks(6)">Destek %</th>
-                            <th style="text-align: right;" class="trend-col-support" onclick="sortStocks(7)">Destek Altı Max %</th>
+                            <th style="text-align: right; width: 90px;" class="bg-support border-left" onclick="sortStocks(4)">Destek Uzaklık</th>
+                            <th style="text-align: right; width: 90px;" class="bg-support" onclick="sortStocks(5)">Max Düşüş</th>
                             
-                            <th style="text-align: right; border-left: 2px solid #ddd;" class="trend-col-resistance" onclick="sortStocks(8)">Direnç %</th>
-                            <th style="text-align: right;" class="trend-col-resistance" onclick="sortStocks(9)">Direnç Üstü Max %</th>
+                            <th style="text-align: right; width: 90px;" class="bg-resistance border-left" onclick="sortStocks(6)">Direnç Uzaklık</th>
+                            <th style="text-align: right; width: 90px;" class="bg-resistance" onclick="sortStocks(7)">Max Aşım</th>
                             
-                            <th style="text-align: right;" onclick="sortStocks(3)">ATH Fark %</th>
-                            <th style="text-align: right;" onclick="sortStocks(4)">Hacim</th>
-                            <th style="text-align: right;" onclick="sortStocks(5)">PD</th>
+                            <th style="text-align: right; width: 80px;" onclick="sortStocks(8)">ATH %</th>
+                            <th style="text-align: right; width: 110px;" onclick="sortStocks(9)">Hacim</th>
+                            <th style="text-align: right; width: 100px;" onclick="sortStocks(10)">Piyasa Değ.</th>
                         </tr>
                     </thead>
                     <tbody id="stockBody">
                         <tr>
-                            <td colspan="10" class="no-data">
+                            <td colspan="11" class="no-data">
                                 <i class="fas fa-spinner fa-spin" style="font-size: 24px;"></i><br><br>
                                 Veriler yükleniyor...
                             </td>
@@ -161,7 +170,7 @@ HTML_TEMPLATE = """
                 <div class="modal-title" id="chartTitle">Hisse Detayı</div>
                 <div style="display: flex; gap: 8px;">
                     <button class="download-btn" style="background: #3b82f6; margin-left: 0;" onclick="download2KChart()">
-                        <i class="fas fa-download"></i> 2K İndir
+                        <i class="fas fa-download"></i> 2K
                     </button>
                     <button class="close-btn" onclick="closeChartModal()">&times;</button>
                 </div>
@@ -184,8 +193,8 @@ HTML_TEMPLATE = """
         let dipCache = {}; 
         let resistanceCache = {};
         let breakoutCache = {};
-        let currentSortColumn = 5;
-        let sortAscending = true;
+        let currentSortColumn = 10; // Varsayılan PD sıralaması
+        let sortAscending = false;
 
         const API = {
             SCANNER: '/api/scanner',
@@ -193,10 +202,20 @@ HTML_TEMPLATE = """
             CHART: '/api/chart'
         };
 
+        function getPazarFromTypespecs(typespecs) {
+            if (!typespecs || !Array.isArray(typespecs) || typespecs.length === 0) return 'Bilinmiyor';
+            const typespec = typespecs[0] || '';
+            if (typespec.includes('st_yildiz') || typespec.toLowerCase().includes('stars')) return 'Yıldız';
+            if (typespec.includes('st_ana') || typespec.toLowerCase().includes('main')) return 'Ana';
+            if (typespec.includes('st_alt') || typespec.toLowerCase().includes('sub')) return 'Alt';
+            if (typespec.toLowerCase().includes('watchlist')) return 'Yakın İzleme';
+            return typespec || 'Diğer';
+        }
+
         function formatLargeNumber(num) {
-            if (num >= 1000000000) return (num / 1000000000).toFixed(2) + ' Mlr';
-            if (num >= 1000000) return (num / 1000000).toFixed(2) + ' Mly';
-            if (num >= 1000) return (num / 1000).toFixed(1) + ' Bin';
+            if (num >= 1000000000) return (num / 1000000000).toFixed(1) + ' Mr';
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + ' Mn';
+            if (num >= 1000) return (num / 1000).toFixed(0) + ' B';
             return num.toFixed(0);
         }
 
@@ -205,27 +224,29 @@ HTML_TEMPLATE = """
                 sortAscending = !sortAscending;
             } else {
                 currentSortColumn = columnIndex;
-                sortAscending = (columnIndex === 0);
+                sortAscending = (columnIndex === 0 || columnIndex === 1); // İsim ve Pazar için A-Z, diğerleri için 9-0 başla
             }
 
             const sorted = [...allStocks].sort((a, b) => {
                 let valueA, valueB;
                 switch(columnIndex) {
-                    case 0: valueA = (a.d[0] || '').toLowerCase(); valueB = (b.d[0] || '').toLowerCase(); return sortAscending ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
-                    case 1: valueA = parseFloat(a.d[6] || 0); valueB = parseFloat(b.d[6] || 0); break;
-                    case 2: valueA = parseFloat(a.d[12] || 0); valueB = parseFloat(b.d[12] || 0); break;
-                    case 3:
-                        const priceA = parseFloat(a.d[6] || 0); const athA = parseFloat(a.d[26] || 0);
-                        valueA = athA > 0 ? (((athA - priceA) / priceA) * 100) : 0;
-                        const priceB = parseFloat(b.d[6] || 0); const athB = parseFloat(b.d[26] || 0);
-                        valueB = athB > 0 ? (((athB - priceB) / priceB) * 100) : 0;
-                        break;
-                    case 4: 
-                        valueA = parseFloat(a.d[13] || 0) * parseFloat(a.d[6] || 0); 
-                        valueB = parseFloat(b.d[13] || 0) * parseFloat(b.d[6] || 0); 
-                        break;
-                    case 5: valueA = parseFloat(a.d[15] || 0); valueB = parseFloat(b.d[15] || 0); break;
-                    case 6: // Destek
+                    case 0: // Hisse
+                        valueA = (a.d[0] || '').toLowerCase(); 
+                        valueB = (b.d[0] || '').toLowerCase(); 
+                        return sortAscending ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
+                    
+                    case 1: // Pazar (Cache veya typespecs'ten)
+                        let pazarA = marketCache[a.d[0]] || getPazarFromTypespecs(a.d[5]);
+                        let pazarB = marketCache[b.d[0]] || getPazarFromTypespecs(b.d[5]);
+                        return sortAscending ? pazarA.localeCompare(pazarB) : pazarB.localeCompare(pazarA);
+
+                    case 2: // Fiyat
+                        valueA = parseFloat(a.d[6] || 0); valueB = parseFloat(b.d[6] || 0); break;
+                    
+                    case 3: // Değişim %
+                        valueA = parseFloat(a.d[12] || 0); valueB = parseFloat(b.d[12] || 0); break;
+                    
+                    case 4: // Destek Uzaklık
                         const supA = supportCache[a.d[0]];
                         const pA = parseFloat(a.d[6] || 0);
                         valueA = supA && pA > 0 ? ((pA - supA) / pA) * 100 : -999;
@@ -233,11 +254,13 @@ HTML_TEMPLATE = """
                         const pB = parseFloat(b.d[6] || 0);
                         valueB = supB && pB > 0 ? ((pB - supB) / pB) * 100 : -999;
                         break;
-                    case 7: // Destek Altı Max
+                    
+                    case 5: // Max Düşüş
                         valueA = dipCache[a.d[0]] || 0;
                         valueB = dipCache[b.d[0]] || 0;
                         break;
-                    case 8: // Direnç
+                    
+                    case 6: // Direnç Uzaklık
                         const resA = resistanceCache[a.d[0]];
                         const prA = parseFloat(a.d[6] || 0);
                         valueA = resA && prA > 0 ? ((resA - prA) / prA) * 100 : 999;
@@ -245,12 +268,28 @@ HTML_TEMPLATE = """
                         const prB = parseFloat(b.d[6] || 0);
                         valueB = resB && prB > 0 ? ((resB - prB) / prB) * 100 : 999;
                         break;
-                    case 9: // Direnç Üstü Max
+                    
+                    case 7: // Max Aşım
                         valueA = breakoutCache[a.d[0]] || 0;
                         valueB = breakoutCache[b.d[0]] || 0;
                         break;
+                        
+                    case 8: // ATH Fark
+                        const priceA2 = parseFloat(a.d[6] || 0); const athA = parseFloat(a.d[26] || 0);
+                        valueA = athA > 0 ? (((athA - priceA2) / priceA2) * 100) : 0;
+                        const priceB2 = parseFloat(b.d[6] || 0); const athB = parseFloat(b.d[26] || 0);
+                        valueB = athB > 0 ? (((athB - priceB2) / priceB2) * 100) : 0;
+                        break;
+
+                    case 9: // Hacim
+                        valueA = parseFloat(a.d[13] || 0) * parseFloat(a.d[6] || 0); 
+                        valueB = parseFloat(b.d[13] || 0) * parseFloat(b.d[6] || 0); 
+                        break;
+                        
+                    case 10: // PD
+                        valueA = parseFloat(a.d[15] || 0); valueB = parseFloat(b.d[15] || 0); break;
                 }
-                if (columnIndex !== 0) return sortAscending ? valueA - valueB : valueB - valueA;
+                if (columnIndex !== 0 && columnIndex !== 1) return sortAscending ? valueA - valueB : valueB - valueA;
                 return 0;
             });
 
@@ -314,18 +353,22 @@ HTML_TEMPLATE = """
         function displayStocks(stocks) {
             const tbody = document.getElementById('stockBody');
             if (!stocks || stocks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="no-data">Veri bulunamadı</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" class="no-data">Veri bulunamadı</td></tr>';
                 return;
             }
             tbody.innerHTML = stocks.map(stock => {
                 const symbol = stock.d[0] || '';
+                const typespecs = stock.d[5] || [];
+                const marketFromApi = marketCache[symbol];
+                const pazar = marketFromApi || getPazarFromTypespecs(typespecs);
                 const price = parseFloat(stock.d[6] || 0);
                 const change = parseFloat(stock.d[12] || 0).toFixed(2);
                 const volume = parseFloat(stock.d[13] || 0);
                 const volumeTL = volume * price;
                 const marketCap = parseFloat(stock.d[15] || 0);
                 const ath = parseFloat(stock.d[26] || 0);
-                const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(2) : '0.00';
+                const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(1) : '0.0';
+                
                 const marketCapText = formatLargeNumber(marketCap);
                 const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
                 const changeSign = change > 0 ? '+' : '';
@@ -333,34 +376,34 @@ HTML_TEMPLATE = """
                 // Destek
                 const supportLevel = supportCache[symbol];
                 const supportDist = supportLevel && price > 0 ? (((price - supportLevel) / price) * 100).toFixed(2) : '-';
-                const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#666');
+                const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#888');
                 const maxDip = dipCache[symbol];
-                const maxDipText = maxDip !== undefined ? maxDip.toFixed(2) + '%' : '-';
+                const maxDipText = maxDip !== undefined ? maxDip.toFixed(1) + '%' : '-';
                 const maxDipColor = (maxDip !== undefined && maxDip < -20) ? '#ef4444' : '#666';
 
                 // Direnç
                 const resistanceLevel = resistanceCache[symbol];
                 const resistanceDist = resistanceLevel && price > 0 ? (((resistanceLevel - price) / price) * 100).toFixed(2) : '-';
-                // Direnç farkı negatifse (kırmışsa) YEŞİL, pozitifse (dirence takılmışsa) NÖTR/KIRMIZI
                 const resistanceColor = resistanceDist < 0 ? '#10b981' : '#ef4444'; 
                 const maxBreakout = breakoutCache[symbol];
-                const maxBreakoutText = maxBreakout !== undefined ? maxBreakout.toFixed(2) + '%' : '-';
+                const maxBreakoutText = maxBreakout !== undefined ? maxBreakout.toFixed(1) + '%' : '-';
                 const maxBreakoutColor = (maxBreakout !== undefined && maxBreakout > 10) ? '#10b981' : '#666';
 
                 return `<tr>
                     <td class="symbol" onclick="showChartModal('${symbol}')">${symbol}</td>
+                    <td class="pazar">${pazar}</td>
                     <td style="text-align: right; font-weight: 600;">${price.toFixed(2)}₺</td>
                     <td style="text-align: right;" class="change ${changeClass}">${changeSign}${change}%</td>
                     
-                    <td style="text-align: right; border-left: 2px solid #eee;" class="trend-col-support"><span style="color: ${supportColor}; font-weight: 600;">${supportDist}%</span></td>
-                    <td style="text-align: right;" class="trend-col-support"><span style="color: ${maxDipColor};">${maxDipText}</span></td>
+                    <td style="text-align: right;" class="bg-support border-left"><span style="color: ${supportColor}; font-weight: 600;">${supportDist}%</span></td>
+                    <td style="text-align: right;" class="bg-support"><span style="color: ${maxDipColor};">${maxDipText}</span></td>
                     
-                    <td style="text-align: right; border-left: 2px solid #eee;" class="trend-col-resistance"><span style="color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</span></td>
-                    <td style="text-align: right;" class="trend-col-resistance"><span style="color: ${maxBreakoutColor};">${maxBreakoutText}</span></td>
+                    <td style="text-align: right;" class="bg-resistance border-left"><span style="color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</span></td>
+                    <td style="text-align: right;" class="bg-resistance"><span style="color: ${maxBreakoutColor};">${maxBreakoutText}</span></td>
                     
                     <td style="text-align: right; color: #666;">${athDiffPercent}%</td>
-                    <td style="text-align: right;">${formatLargeNumber(volumeTL)} ₺</td>
-                    <td style="text-align: right; color: #666;">${marketCapText}</td>
+                    <td style="text-align: right;">${formatLargeNumber(volumeTL)}</td>
+                    <td style="text-align: right; color: #555;">${marketCapText}</td>
                 </tr>`;
             }).join('');
         }
@@ -382,10 +425,10 @@ HTML_TEMPLATE = """
         function downloadTableAsImage() {
             const btn = event.target.closest('button');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> İndiriliyor...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
             html2canvas(document.querySelector('.table-wrapper')).then(canvas => {
                 const link = document.createElement('a');
-                link.download = 'hisse-senetleri-' + new Date().toISOString().slice(0,10) + '.png';
+                link.download = 'bist-analiz-' + new Date().toISOString().slice(0,10) + '.png';
                 link.href = canvas.toDataURL();
                 link.click();
                 btn.disabled = false;
@@ -406,7 +449,7 @@ HTML_TEMPLATE = """
         async function showChartModal(symbol) {
             const modal = document.getElementById('chartModal');
             const title = document.getElementById('chartTitle');
-            title.textContent = symbol + ' - Teknik Analiz Grafiği';
+            title.textContent = symbol + ' - Teknik Analiz';
             modal.classList.add('show');
 
             document.getElementById('chartCanvas').innerHTML = `
@@ -455,13 +498,13 @@ HTML_TEMPLATE = """
         function download2KChart() {
             const btn = event.target.closest('button');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 2K İndiriliyor...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
             const title = document.getElementById('chartTitle').textContent;
-            const filename = title.split(' - ')[0] + '-grafik-2k-' + new Date().toISOString().slice(0,10) + '.png';
+            const filename = title.split(' - ')[0] + '-grafik-' + new Date().toISOString().slice(0,10) + '.png';
             Plotly.downloadImage('chartCanvas', {format: 'png', width: 2560, height: 1440}, filename);
             setTimeout(() => {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-download"></i> 2K İndir';
+                btn.innerHTML = '<i class="fas fa-download"></i> 2K';
             }, 1500);
         }
 
@@ -648,7 +691,6 @@ def fetch_stock_scanner_data():
     }
 
     try:
-        # Timeout'u biraz artırdık ve verify=True bıraktık (TradingView için SSL gerekli)
         response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=45)
         if response.status_code == 200:
             return response.json()
@@ -684,7 +726,6 @@ def fetch_chart_data(symbol):
         pass
     return []
 
-# --- BU FONKSİYON GÜNCELLENDİ ---
 def calculate_trend_levels(raw_data):
     lows = []
     highs = []
@@ -705,9 +746,7 @@ def calculate_trend_levels(raw_data):
     
     n = len(lows)
     
-    # ----------------------------------------
     # 1. ANA DESTEK HESAPLAMASI (Dipleri baz alır)
-    # ----------------------------------------
     min_idx1, min_val1 = 0, lows[0]
     limit_low = int(n * 0.3)
     for i in range(limit_low):
@@ -727,15 +766,12 @@ def calculate_trend_levels(raw_data):
         date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
         if date_support_val > 0:
             diff = lows[i] - date_support_val
-            # Eğer o günkü düşük fiyat, desteğin altındaysa (diff negatif)
             if diff < 0:
                 dip_pct = (diff / date_support_val) * 100
-                if dip_pct < max_dip_percent: # En derin çukuru bul
+                if dip_pct < max_dip_percent:
                     max_dip_percent = dip_pct
                     
-    # ----------------------------------------
     # 2. ANA DİRENÇ HESAPLAMASI (Tepeleri baz alır)
-    # ----------------------------------------
     max_idx1, max_val1 = 0, highs[0]
     for i in range(limit_low):
         if highs[i] > max_val1: max_val1, max_idx1 = highs[i], i
@@ -753,10 +789,9 @@ def calculate_trend_levels(raw_data):
         date_res_val = highs[max_idx1] + resistance_slope * (i - max_idx1)
         if date_res_val > 0:
             diff = highs[i] - date_res_val
-            # Eğer o günkü yüksek fiyat, direncin üzerindeyse (diff pozitif)
             if diff > 0: 
                 brk_pct = (diff / date_res_val) * 100
-                if brk_pct > max_breakout_percent: # En yüksek taşıyışı bul
+                if brk_pct > max_breakout_percent:
                     max_breakout_percent = brk_pct
 
     return {
@@ -821,7 +856,6 @@ def api_batch_all():
     resistances = {}
     breakouts = {}
     
-    # Gevent Pool kullanımı
     pool = Pool(10)
     jobs = [pool.spawn(process_batch_symbol, sym) for sym in symbols]
     gevent.joinall(jobs)
@@ -840,7 +874,6 @@ def api_batch_all():
     return jsonify({'markets': markets, 'supports': supports, 'dips': dips, 'resistances': resistances, 'breakouts': breakouts})
 
 if __name__ == '__main__':
-    # SSL uyarısını gizle
     requests.packages.urllib3.disable_warnings()
     from gevent.pywsgi import WSGIServer
     http_server = WSGIServer(('0.0.0.0', 8080), app)
