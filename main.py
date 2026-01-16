@@ -1,6 +1,6 @@
 from gevent import monkey; monkey.patch_all()
 import sys
-# Rekürsiyon limitini artırıyoru
+# Rekürsiyon limitini artırıyoruz
 sys.setrecursionlimit(2000)
 
 from flask import Flask, request, jsonify, render_template_string
@@ -8,7 +8,11 @@ import requests
 import json
 import gevent
 from gevent.pool import Pool
-import numpy as np # Hesaplamalar için numpy ekleyebiliriz ama dependency artmasın diye manuel math kullanacağız
+import urllib3 # Uyarıları kapatmak için import ediyoruz
+
+# --- SSL UYARILARINI KAPATMA ---
+# Bu kısım verify=False kullandığımız için çıkan kalabalık uyarıları engeller
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 
@@ -782,10 +786,6 @@ def calculate_trend_levels(raw_data):
     
     if len(lows) < 50: return None
     
-    # Python tarafında da JS mantığına benzer "geçerli destek" bulma
-    # İşlem yükünü azaltmak için basitleştirilmiş lineer regresyon yerine
-    # "Dip birleştiren en düşük eğim" mantığını kullanacağız.
-    
     n = len(lows)
     # 1. En düşük dip (Global Low)
     min_val = min(lows)
@@ -799,12 +799,6 @@ def calculate_trend_levels(raw_data):
             min_idx = sub_lows.index(min_val)
 
     # 2. Bu dipten sonraki barlar için ihlal edilmeyen en iyi trendi bul
-    best_slope = 0
-    found = False
-    
-    # Min index'ten sonraki her bar için eğim hesapla
-    # Ancak o eğim aradaki hiçbir barı kesmemeli (Convex Hull Lower Chain mantığı)
-    
     # Basit yaklaşım: Son çeyrekteki en düşük dip ile birleştir
     last_quarter_idx_start = int(n * 0.75)
     if last_quarter_idx_start <= min_idx: 
@@ -812,10 +806,7 @@ def calculate_trend_levels(raw_data):
         
     if last_quarter_idx_start < n:
         min_val2 = min(lows[last_quarter_idx_start:])
-        # Bu değerin indeksini, son çeyrek içinde bul
         try:
-            # lows içinde ararken start index vererek doğru yeri bul
-            # Python list index methodu start parametresi alır
             min_idx2 = lows.index(min_val2, last_quarter_idx_start)
             
             if min_idx2 > min_idx:
@@ -885,7 +876,6 @@ def api_batch_all():
     return jsonify({'markets': markets, 'supports': supports})
 
 if __name__ == '__main__':
-    requests.packages.urllib3.disable_warnings()
     from gevent.pywsgi import WSGIServer
     print("Sunucu 8080 portunda başlatılıyor...")
     http_server = WSGIServer(('0.0.0.0', 8080), app)
