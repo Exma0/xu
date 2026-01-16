@@ -1,6 +1,6 @@
 from gevent import monkey; monkey.patch_all()
 import sys
-# Rekürsiyon limitini artırıyoruz (Garanti olsun diye)
+# Rekürsiyon limitini artırıyoruz
 sys.setrecursionlimit(2000)
 
 from flask import Flask, request, jsonify, render_template_string
@@ -129,13 +129,14 @@ HTML_TEMPLATE = """
                             <th style="text-align: right;" onclick="sortStocks(2)">Değişim %</th>
                             <th style="text-align: right;" onclick="sortStocks(3)">ATH Farkı (%)</th>
                             <th style="text-align: right;" onclick="sortStocks(6)">Al (%)</th>
+                            <th style="text-align: right;" onclick="sortStocks(7)">Destek Altı Max %</th>
                             <th style="text-align: right;" onclick="sortStocks(4)">Hacim (₺)</th>
                             <th style="text-align: right;" onclick="sortStocks(5)">Piyasa Değeri</th>
                         </tr>
                     </thead>
                     <tbody id="stockBody">
                         <tr>
-                            <td colspan="8" class="no-data">
+                            <td colspan="9" class="no-data">
                                 <i class="fas fa-spinner fa-spin" style="font-size: 24px;"></i><br><br>
                                 Veriler yükleniyor...
                             </td>
@@ -172,6 +173,7 @@ HTML_TEMPLATE = """
         let allStocks = [];
         let marketCache = {};
         let supportCache = {};
+        let dipCache = {}; // Destek altı maksimum düşüş verisi için cache
         let currentSortColumn = 5;
         let sortAscending = true;
 
@@ -231,6 +233,10 @@ HTML_TEMPLATE = """
                         const pB = parseFloat(b.d[6] || 0);
                         valueB = supB && pB > 0 ? ((pB - supB) / pB) * 100 : -999;
                         break;
+                    case 7: // Yeni kolon: Destek Altı Max %
+                        valueA = dipCache[a.d[0]] || 0;
+                        valueB = dipCache[b.d[0]] || 0;
+                        break;
                 }
                 if (columnIndex !== 0) return sortAscending ? valueA - valueB : valueB - valueA;
                 return 0;
@@ -282,6 +288,7 @@ HTML_TEMPLATE = """
                 const result = await resp.json();
                 if (result.markets) Object.assign(marketCache, result.markets);
                 if (result.supports) Object.assign(supportCache, result.supports);
+                if (result.dips) Object.assign(dipCache, result.dips); // Yeni veri: Dips
                 sortStocks(currentSortColumn);
             } catch (err) {
                 if (retryCount > 0) {
@@ -293,7 +300,7 @@ HTML_TEMPLATE = """
         function displayStocks(stocks) {
             const tbody = document.getElementById('stockBody');
             if (!stocks || stocks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">Veri bulunamadı</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">Veri bulunamadı</td></tr>';
                 return;
             }
             tbody.innerHTML = stocks.map(stock => {
@@ -316,8 +323,13 @@ HTML_TEMPLATE = """
 
                 const supportLevel = supportCache[symbol];
                 const supportDist = supportLevel && price > 0 ? (((price - supportLevel) / price) * 100).toFixed(2) : '-';
-                
                 const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#666');
+
+                // Yeni veri hesaplaması
+                const maxDip = dipCache[symbol];
+                const maxDipText = maxDip !== undefined ? maxDip.toFixed(2) + '%' : '-';
+                // Eğer -%20'den fazla inmişse kırmızı yap, yoksa gri kalsın
+                const maxDipColor = (maxDip !== undefined && maxDip < -20) ? '#ef4444' : '#666';
 
                 return `<tr>
                     <td class="symbol" onclick="showChartModal('${symbol}')">${symbol}</td>
@@ -326,6 +338,7 @@ HTML_TEMPLATE = """
                     <td style="text-align: right;" class="change ${changeClass}">${changeSign}${change}%</td>
                     <td style="text-align: right; color: #666;">${athDiffPercent}%</td>
                     <td style="text-align: right; color: ${supportColor}; font-weight: 600;">${supportDist}%</td>
+                    <td style="text-align: right; color: ${maxDipColor};">${maxDipText}</td>
                     <td style="text-align: right;">${formatLargeNumber(volumeTL)} ₺</td>
                     <td style="text-align: right; color: #666;">${marketCapText}</td>
                 </tr>`;
@@ -679,17 +692,38 @@ def calculate_trend_levels(raw_data):
     support_slope = (lows[min_idx2] - lows[min_idx1]) / (min_idx2 - min_idx1) if min_idx2 != min_idx1 else 0
     current_support = lows[min_idx1] + support_slope * (n - 1 - min_idx1)
     
-    return {'currentSupport': current_support}
+    # YENİ KOD: Tüm zamanlarda destek altına en fazla ne kadar sarkmış?
+    max_dip_percent = 0.0
+    
+    for i in range(n):
+        # O günkü destek seviyesi teorik olarak neydi?
+        date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
+        
+        # Eğer teorik destek değeri mantıklıysa (negatif değilse)
+        if date_support_val > 0:
+            diff = lows[i] - date_support_val
+            # Eğer fiyat desteğin altındaysa (diff negatif)
+            if diff < 0:
+                dip_pct = (diff / date_support_val) * 100
+                if dip_pct < max_dip_percent: # En küçük (en derin) negatifi arıyoruz
+                    max_dip_percent = dip_pct
+
+    return {'currentSupport': current_support, 'maxDip': max_dip_percent}
 
 def process_batch_symbol(symbol):
     market_info = fetch_market_info(symbol)
     chart_data = fetch_chart_data(symbol)
     support_val = None
+    max_dip_val = None
+    
     if chart_data and len(chart_data) >= 50:
         trend_data = calculate_trend_levels(chart_data)
-        if trend_data and trend_data['currentSupport'] > 0:
-            support_val = round(trend_data['currentSupport'], 2)
-    return symbol, market_info, support_val
+        if trend_data:
+            if trend_data['currentSupport'] > 0:
+                support_val = round(trend_data['currentSupport'], 2)
+            max_dip_val = round(trend_data['maxDip'], 2)
+            
+    return symbol, market_info, support_val, max_dip_val
 
 # --- ROTAS ---
 
@@ -718,11 +752,12 @@ def api_chart():
 def api_batch_all():
     symbols_param = request.args.get('symbols', '')
     if not symbols_param:
-        return jsonify({'markets': {}, 'supports': {}})
+        return jsonify({'markets': {}, 'supports': {}, 'dips': {}})
         
     symbols = [s for s in symbols_param.split(',') if s]
     markets = {}
     supports = {}
+    dips = {}
     
     # Gevent Pool kullanımı (ThreadPoolExecutor yerine)
     pool = Pool(10)
@@ -732,12 +767,13 @@ def api_batch_all():
     for job in jobs:
         try:
             if job.value:
-                sym, mkt, sup = job.value
+                sym, mkt, sup, dip = job.value
                 if mkt: markets[sym] = mkt
                 if sup: supports[sym] = sup
+                if dip is not None: dips[sym] = dip
         except: pass
                 
-    return jsonify({'markets': markets, 'supports': supports})
+    return jsonify({'markets': markets, 'supports': supports, 'dips': dips})
 
 if __name__ == '__main__':
     # SSL uyarısını gizle
