@@ -8,7 +8,8 @@ import requests
 import json
 import gevent
 from gevent.pool import Pool
-import time
+import math
+import statistics
 
 app = Flask(__name__)
 
@@ -32,70 +33,70 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Trend Analizi</title>
+    <title>BIST Pro Trend Analizi</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; background: #f8f9fa; font-family: 'Inter', sans-serif; color: #333; }
-        /* Container ekranın %98'ini kaplasın */
+        html, body { height: 100%; background: #f1f3f5; font-family: 'Inter', sans-serif; color: #343a40; font-size: 12px; }
         .container { max-width: 98%; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
-        header { background: white; padding: 16px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .header-content { padding: 0 20px; display: flex; justify-content: space-between; align-items: center; }
-        .header-title { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; }
-        .header-title i { color: #0066cc; }
-        .stats { display: flex; gap: 20px; flex: 1; margin-left: 30px; }
-        .stat { display: flex; flex-direction: column; }
-        .stat-label { font-size: 11px; color: #666; text-transform: uppercase; font-weight: 600; }
-        .stat-value { font-size: 18px; font-weight: 700; margin-top: 2px; }
-        .stat-value.positive { color: #10b981; }
-        .stat-value.negative { color: #ef4444; }
-        main { flex: 1; padding: 16px; overflow: auto; }
-        .table-wrapper { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; } /* Sabit tablo düzeni */
-        thead { background: #f3f4f6; position: sticky; top: 0; z-index: 10; }
         
-        /* Daha kompakt hücreler */
-        th { padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        th:hover { background: #e5e7eb; color: #000; }
-        td { padding: 8px 8px; border-bottom: 1px solid #f0f0f0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        tr:hover { background: #f9fafb; }
+        /* Header */
+        header { background: white; padding: 12px 0; border-bottom: 1px solid #dee2e6; }
+        .header-content { padding: 0 15px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; color: #212529; }
+        .header-title i { color: #228be6; }
         
-        .symbol { font-weight: 700; color: #0066cc; cursor: pointer; }
-        .symbol:hover { text-decoration: underline; }
-        .pazar { color: #666; font-size: 11px; font-weight: 500; }
+        .stats { display: flex; gap: 15px; margin-left: 20px; }
+        .stat-item { background: #f8f9fa; padding: 4px 10px; border-radius: 4px; border: 1px solid #e9ecef; }
+        .stat-label { font-size: 10px; color: #868e96; font-weight: 700; text-transform: uppercase; }
+        .stat-val { font-size: 14px; font-weight: 700; }
+        .stat-val.pos { color: #12b886; }
+        .stat-val.neg { color: #fa5252; }
+
+        .btn-group { display: flex; gap: 8px; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; color: white; display: flex; align-items: center; gap: 5px; font-size: 11px; transition: 0.2s; }
+        .btn-green { background: #12b886; } .btn-green:hover { background: #0ca678; }
+        .btn-blue { background: #228be6; } .btn-blue:hover { background: #1c7ed6; }
+
+        /* Main Content */
+        main { flex: 1; padding: 10px; overflow: hidden; display: flex; flex-direction: column; }
+        .table-container { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); flex: 1; overflow: auto; position: relative; }
         
-        .change { font-weight: 700; text-align: right; }
-        .change.up { color: #10b981; }
-        .change.down { color: #ef4444; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        thead { position: sticky; top: 0; z-index: 10; background: #f8f9fa; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         
-        .no-data { text-align: center; padding: 40px; color: #999; }
-        .error-message { background: #fef2f2; color: #991b1b; padding: 10px; border-radius: 6px; margin-bottom: 10px; display: none; }
-        .error-message.show { display: block; }
+        th { padding: 10px 8px; text-align: right; font-size: 10px; font-weight: 700; color: #495057; text-transform: uppercase; border-bottom: 2px solid #dee2e6; cursor: pointer; user-select: none; }
+        th:first-child, th:nth-child(2) { text-align: left; }
+        th:hover { background: #e9ecef; color: #000; }
         
-        .download-btn { background: #10b981; color: white; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: flex; align-items: center; gap: 6px; margin-left: 8px; }
-        .download-btn:hover { background: #059669; }
-        .download-btn:disabled { background: #ccc; cursor: not-allowed; }
-        .download-btn:nth-child(2) { background: #3b82f6; }
-        .download-btn:nth-child(2):hover { background: #2563eb; }
+        td { padding: 6px 8px; border-bottom: 1px solid #f1f3f5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        tr:hover { background: #f8f9fa; }
         
-        /* Modal Stilleri */
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); }
+        .col-symbol { font-weight: 700; color: #228be6; cursor: pointer; }
+        .col-symbol:hover { text-decoration: underline; }
+        .col-pazar { color: #868e96; font-size: 10px; }
+        
+        /* Renkli Bloklar */
+        .bg-sup { background-color: rgba(18, 184, 134, 0.04); }
+        .bg-res { background-color: rgba(250, 82, 82, 0.04); }
+        .border-l { border-left: 2px solid #dee2e6; }
+        
+        .val-up { color: #12b886; font-weight: 600; }
+        .val-down { color: #fa5252; font-weight: 600; }
+        .val-neu { color: #adb5bd; }
+
+        .loading-overlay { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #868e96; }
+        
+        /* Modal */
+        .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px); }
         .modal.show { display: flex; }
-        .modal-content { background-color: white; margin: auto; padding: 15px; border-radius: 8px; width: 95%; max-width: 1400px; max-height: 95vh; overflow-y: auto; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
-        .modal-title { font-size: 18px; font-weight: 700; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
-        .chart-container { position: relative; height: 80vh; }
-        #chartCanvas { height: 100%; width: 100%; }
-        .loading { text-align: center; padding: 50px; color: #666; }
-        
-        /* Özel Arka Planlar */
-        .bg-support { background-color: rgba(16, 185, 129, 0.04); }
-        .bg-resistance { background-color: rgba(239, 68, 68, 0.04); }
-        .border-left { border-left: 2px solid #e5e7eb; }
+        .modal-box { background: white; margin: auto; padding: 15px; border-radius: 8px; width: 95%; max-width: 1400px; max-height: 95vh; display: flex; flex-direction: column; }
+        .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6; }
+        .chart-area { flex: 1; min-height: 600px; position: relative; }
+        #chartCanvas { width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -103,61 +104,44 @@ HTML_TEMPLATE = """
         <header>
             <div class="header-content">
                 <div class="header-title">
-                    <i class="fas fa-layer-group"></i>
-                    <span>BIST Trend Analizi</span>
+                    <i class="fas fa-chart-area"></i> BIST Pro Analiz
                 </div>
                 <div class="stats">
-                    <div class="stat">
-                        <div class="stat-label">Hisse</div>
-                        <div class="stat-value" id="totalCount">0</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-label">Yükselen</div>
-                        <div class="stat-value positive" id="risingCount">0</div>
-                    </div>
-                    <div class="stat">
-                        <div class="stat-label">Düşen</div>
-                        <div class="stat-value negative" id="fallingCount">0</div>
-                    </div>
+                    <div class="stat-item"><span class="stat-label">HİSSE:</span> <span class="stat-val" id="countTotal">0</span></div>
+                    <div class="stat-item"><span class="stat-label">POZİTİF:</span> <span class="stat-val pos" id="countUp">0</span></div>
+                    <div class="stat-item"><span class="stat-label">NEGATİF:</span> <span class="stat-val neg" id="countDown">0</span></div>
                 </div>
-                <button class="download-btn" onclick="downloadTableAsImage()">
-                    <i class="fas fa-download"></i> İndir
-                </button>
-                <button class="download-btn" onclick="copyStocksToClipboard()">
-                    <i class="fas fa-copy"></i> Kopyala
-                </button>
+                <div class="btn-group">
+                    <button class="btn btn-green" onclick="downloadTable()"><i class="fas fa-camera"></i> Tabloyu İndir</button>
+                    <button class="btn btn-blue" onclick="copyTable()"><i class="fas fa-copy"></i> Sembolleri Kopyala</button>
+                </div>
             </div>
         </header>
 
         <main>
-            <div class="error-message" id="errorMessage"></div>
-            <div class="table-wrapper">
-                <table id="stockTable">
+            <div id="errorBox" style="background:#ffc9c9; color:#c92a2a; padding:10px; border-radius:4px; margin-bottom:10px; display:none;"></div>
+            <div class="table-container">
+                <table id="mainTable">
                     <thead>
                         <tr>
-                            <th style="width: 80px;" onclick="sortStocks(0)">Hisse</th>
-                            <th style="width: 100px;" onclick="sortStocks(1)">Pazar</th>
-                            <th style="text-align: right; width: 90px;" onclick="sortStocks(2)">Fiyat</th>
-                            <th style="text-align: right; width: 80px;" onclick="sortStocks(3)">Değ.%</th>
+                            <th style="width: 80px;" onclick="sort(0)">HİSSE</th>
+                            <th style="width: 100px;" onclick="sort(1)">PAZAR</th>
+                            <th style="width: 80px;" onclick="sort(2)">FİYAT</th>
+                            <th style="width: 70px;" onclick="sort(3)">DEĞ %</th>
                             
-                            <th style="text-align: right; width: 90px;" class="bg-support border-left" onclick="sortStocks(4)">Destek Uzaklık</th>
-                            <th style="text-align: right; width: 90px;" class="bg-support" onclick="sortStocks(5)">Max Düşüş</th>
+                            <th style="width: 90px;" class="bg-sup border-l" onclick="sort(4)">DESTEK UZAKLIK</th>
+                            <th style="width: 90px;" class="bg-sup" onclick="sort(5)">MAX SARKMA</th>
                             
-                            <th style="text-align: right; width: 90px;" class="bg-resistance border-left" onclick="sortStocks(6)">Direnç Uzaklık</th>
-                            <th style="text-align: right; width: 90px;" class="bg-resistance" onclick="sortStocks(7)">Max Aşım</th>
+                            <th style="width: 90px;" class="bg-res border-l" onclick="sort(6)">DİRENÇ UZAKLIK</th>
+                            <th style="width: 90px;" class="bg-res" onclick="sort(7)">MAX AŞIM</th>
                             
-                            <th style="text-align: right; width: 80px;" onclick="sortStocks(8)">ATH %</th>
-                            <th style="text-align: right; width: 110px;" onclick="sortStocks(9)">Hacim</th>
-                            <th style="text-align: right; width: 100px;" onclick="sortStocks(10)">Piyasa Değ.</th>
+                            <th style="width: 80px;" class="border-l" onclick="sort(8)">ZİRVE %</th>
+                            <th style="width: 100px;" onclick="sort(9)">HACİM</th>
+                            <th style="width: 90px;" onclick="sort(10)">PD</th>
                         </tr>
                     </thead>
-                    <tbody id="stockBody">
-                        <tr>
-                            <td colspan="11" class="no-data">
-                                <i class="fas fa-spinner fa-spin" style="font-size: 24px;"></i><br><br>
-                                Veriler yükleniyor...
-                            </td>
-                        </tr>
+                    <tbody id="tableBody">
+                        <tr><td colspan="11"><div class="loading-overlay"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Veriler Analiz Ediliyor...</div></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -165,716 +149,464 @@ HTML_TEMPLATE = """
     </div>
 
     <div id="chartModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-title" id="chartTitle">Hisse Detayı</div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="download-btn" style="background: #3b82f6; margin-left: 0;" onclick="download2KChart()">
-                        <i class="fas fa-download"></i> 2K
-                    </button>
-                    <button class="close-btn" onclick="closeChartModal()">&times;</button>
+        <div class="modal-box">
+            <div class="modal-head">
+                <h3 id="modalTitle" style="margin:0;">Teknik Grafik</h3>
+                <div>
+                    <button class="btn btn-blue" onclick="downloadChart()" style="display:inline-flex;">HD İndir</button>
+                    <button style="background:none; border:none; font-size:20px; cursor:pointer; margin-left:10px;" onclick="closeModal()">&times;</button>
                 </div>
             </div>
-            <div class="chart-container">
-                <div id="chartCanvas">
-                    <div class="loading">
-                        <i class="fas fa-spinner fa-spin"></i>
-                        <h3>Grafik yükleniyor...</h3>
-                    </div>
-                </div>
+            <div class="chart-area">
+                <div id="chartCanvas"></div>
             </div>
         </div>
     </div>
 
     <script>
-        let allStocks = [];
-        let marketCache = {};
-        let supportCache = {};
-        let dipCache = {}; 
-        let resistanceCache = {};
-        let breakoutCache = {};
-        let currentSortColumn = 10; // Varsayılan PD sıralaması
-        let sortAscending = false;
+        // Global State
+        let stocksData = [];
+        let caches = { market: {}, sup: {}, dip: {}, res: {}, brk: {} };
+        let sortCol = 9; // Hacim default
+        let sortAsc = false;
 
-        const API = {
-            SCANNER: '/api/scanner',
-            BATCH: '/api/batch-all',
-            CHART: '/api/chart'
+        // API Endpoints
+        const API = { SCAN: '/api/scanner', BATCH: '/api/batch', CHART: '/api/chart' };
+
+        // Helpers
+        const fmtNum = n => {
+            if(n>=1e9) return (n/1e9).toFixed(1)+' Mr';
+            if(n>=1e6) return (n/1e6).toFixed(1)+' Mn';
+            if(n>=1e3) return (n/1e3).toFixed(0)+' B';
+            return n.toFixed(0);
+        };
+        
+        const getPazar = (specs) => {
+            if(!specs || !specs.length) return '-';
+            let s = specs[0].toLowerCase();
+            if(s.includes('yildiz') || s.includes('stars')) return 'YILDIZ';
+            if(s.includes('ana') || s.includes('main')) return 'ANA';
+            if(s.includes('alt') || s.includes('sub')) return 'ALT';
+            if(s.includes('watchlist')) return 'YAKIN İZLEME';
+            return 'DİĞER';
         };
 
-        function getPazarFromTypespecs(typespecs) {
-            if (!typespecs || !Array.isArray(typespecs) || typespecs.length === 0) return 'Bilinmiyor';
-            const typespec = typespecs[0] || '';
-            if (typespec.includes('st_yildiz') || typespec.toLowerCase().includes('stars')) return 'Yıldız';
-            if (typespec.includes('st_ana') || typespec.toLowerCase().includes('main')) return 'Ana';
-            if (typespec.includes('st_alt') || typespec.toLowerCase().includes('sub')) return 'Alt';
-            if (typespec.toLowerCase().includes('watchlist')) return 'Yakın İzleme';
-            return typespec || 'Diğer';
-        }
+        // Core Logic
+        async function init() {
+            try {
+                let res = await fetch(API.SCAN);
+                let json = await res.json();
+                if(!json.data) throw new Error("Veri yok");
+                
+                // Filtreleme: PD < 100 Milyar ve PD > 0
+                stocksData = json.data.filter(x => {
+                   let pd = parseFloat(x.d[15]||0);
+                   return pd > 0; // Tüm hisseleri getir
+                });
 
-        function formatLargeNumber(num) {
-            if (num >= 1000000000) return (num / 1000000000).toFixed(1) + ' Mr';
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + ' Mn';
-            if (num >= 1000) return (num / 1000).toFixed(0) + ' B';
-            return num.toFixed(0);
-        }
+                renderTable();
+                updateStats();
 
-        function sortStocks(columnIndex) {
-            if (currentSortColumn === columnIndex) {
-                sortAscending = !sortAscending;
-            } else {
-                currentSortColumn = columnIndex;
-                sortAscending = (columnIndex === 0 || columnIndex === 1); // İsim ve Pazar için A-Z, diğerleri için 9-0 başla
-            }
-
-            const sorted = [...allStocks].sort((a, b) => {
-                let valueA, valueB;
-                switch(columnIndex) {
-                    case 0: // Hisse
-                        valueA = (a.d[0] || '').toLowerCase(); 
-                        valueB = (b.d[0] || '').toLowerCase(); 
-                        return sortAscending ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
-                    
-                    case 1: // Pazar (Cache veya typespecs'ten)
-                        let pazarA = marketCache[a.d[0]] || getPazarFromTypespecs(a.d[5]);
-                        let pazarB = marketCache[b.d[0]] || getPazarFromTypespecs(b.d[5]);
-                        return sortAscending ? pazarA.localeCompare(pazarB) : pazarB.localeCompare(pazarA);
-
-                    case 2: // Fiyat
-                        valueA = parseFloat(a.d[6] || 0); valueB = parseFloat(b.d[6] || 0); break;
-                    
-                    case 3: // Değişim %
-                        valueA = parseFloat(a.d[12] || 0); valueB = parseFloat(b.d[12] || 0); break;
-                    
-                    case 4: // Destek Uzaklık
-                        const supA = supportCache[a.d[0]];
-                        const pA = parseFloat(a.d[6] || 0);
-                        valueA = supA && pA > 0 ? ((pA - supA) / pA) * 100 : -999;
-                        const supB = supportCache[b.d[0]];
-                        const pB = parseFloat(b.d[6] || 0);
-                        valueB = supB && pB > 0 ? ((pB - supB) / pB) * 100 : -999;
-                        break;
-                    
-                    case 5: // Max Düşüş
-                        valueA = dipCache[a.d[0]] || 0;
-                        valueB = dipCache[b.d[0]] || 0;
-                        break;
-                    
-                    case 6: // Direnç Uzaklık
-                        const resA = resistanceCache[a.d[0]];
-                        const prA = parseFloat(a.d[6] || 0);
-                        valueA = resA && prA > 0 ? ((resA - prA) / prA) * 100 : 999;
-                        const resB = resistanceCache[b.d[0]];
-                        const prB = parseFloat(b.d[6] || 0);
-                        valueB = resB && prB > 0 ? ((resB - prB) / prB) * 100 : 999;
-                        break;
-                    
-                    case 7: // Max Aşım
-                        valueA = breakoutCache[a.d[0]] || 0;
-                        valueB = breakoutCache[b.d[0]] || 0;
-                        break;
-                        
-                    case 8: // ATH Fark
-                        const priceA2 = parseFloat(a.d[6] || 0); const athA = parseFloat(a.d[26] || 0);
-                        valueA = athA > 0 ? (((athA - priceA2) / priceA2) * 100) : 0;
-                        const priceB2 = parseFloat(b.d[6] || 0); const athB = parseFloat(b.d[26] || 0);
-                        valueB = athB > 0 ? (((athB - priceB2) / priceB2) * 100) : 0;
-                        break;
-
-                    case 9: // Hacim
-                        valueA = parseFloat(a.d[13] || 0) * parseFloat(a.d[6] || 0); 
-                        valueB = parseFloat(b.d[13] || 0) * parseFloat(b.d[6] || 0); 
-                        break;
-                        
-                    case 10: // PD
-                        valueA = parseFloat(a.d[15] || 0); valueB = parseFloat(b.d[15] || 0); break;
+                // Batch Loading
+                let symbols = stocksData.map(x => x.d[0]);
+                for(let i=0; i<symbols.length; i+=40) {
+                    let chunk = symbols.slice(i, i+40).join(',');
+                    loadBatch(chunk);
+                    await new Promise(r => setTimeout(r, 50)); // Rate limit koruması
                 }
-                if (columnIndex !== 0 && columnIndex !== 1) return sortAscending ? valueA - valueB : valueB - valueA;
-                return 0;
+            } catch(e) {
+                document.getElementById('errorBox').style.display='block';
+                document.getElementById('errorBox').innerText = e.message;
+            }
+        }
+
+        async function loadBatch(syms) {
+            try {
+                let res = await fetch(API.BATCH + '?symbols=' + encodeURIComponent(syms));
+                let data = await res.json();
+                Object.assign(caches.market, data.market);
+                Object.assign(caches.sup, data.sup);
+                Object.assign(caches.dip, data.dip);
+                Object.assign(caches.res, data.res);
+                Object.assign(caches.brk, data.brk);
+                renderTable(); // Her partide tabloyu güncelle
+            } catch(e) { console.error(e); }
+        }
+
+        function sort(col) {
+            if(sortCol === col) sortAsc = !sortAsc;
+            else { sortCol = col; sortAsc = (col < 2); } // İsim/Pazar harici default azalan
+            renderTable();
+        }
+
+        function renderTable() {
+            let sorted = [...stocksData].sort((a,b) => {
+                let vA, vB;
+                let symA = a.d[0], symB = b.d[0];
+                
+                switch(sortCol) {
+                    case 0: vA=symA; vB=symB; break;
+                    case 1: vA=caches.market[symA]||getPazar(a.d[5]); vB=caches.market[symB]||getPazar(b.d[5]); break;
+                    case 2: vA=parseFloat(a.d[6]||0); vB=parseFloat(b.d[6]||0); break;
+                    case 3: vA=parseFloat(a.d[12]||0); vB=parseFloat(b.d[12]||0); break;
+                    case 4: // Destek Uzaklık
+                         let sA = caches.sup[symA], pA = parseFloat(a.d[6]);
+                         vA = (sA && pA) ? ((pA-sA)/pA)*100 : -999;
+                         let sB = caches.sup[symB], pB = parseFloat(b.d[6]);
+                         vB = (sB && pB) ? ((pB-sB)/pB)*100 : -999;
+                         break;
+                    case 5: vA=caches.dip[symA]||0; vB=caches.dip[symB]||0; break;
+                    case 6: // Direnç Uzaklık
+                         let rA = caches.res[symA], prA = parseFloat(a.d[6]);
+                         vA = (rA && prA) ? ((rA-prA)/prA)*100 : 999;
+                         let rB = caches.res[symB], prB = parseFloat(b.d[6]);
+                         vB = (rB && prB) ? ((rB-prB)/prB)*100 : 999;
+                         break;
+                    case 7: vA=caches.brk[symA]||0; vB=caches.brk[symB]||0; break;
+                    case 8: // ATH
+                         let athA = parseFloat(a.d[26]||0), curA = parseFloat(a.d[6]);
+                         vA = athA ? ((athA-curA)/curA)*100 : 0;
+                         let athB = parseFloat(b.d[26]||0), curB = parseFloat(b.d[6]);
+                         vB = athB ? ((athB-curB)/curB)*100 : 0;
+                         break;
+                    case 9: // Hacim
+                         vA = parseFloat(a.d[13]||0)*parseFloat(a.d[6]||0);
+                         vB = parseFloat(b.d[13]||0)*parseFloat(b.d[6]||0);
+                         break;
+                    case 10: vA=parseFloat(a.d[15]||0); vB=parseFloat(b.d[15]||0); break;
+                }
+                
+                if(typeof vA === 'string') return sortAsc ? vA.localeCompare(vB) : vB.localeCompare(vA);
+                return sortAsc ? vA - vB : vB - vA;
             });
 
-            allStocks = sorted;
-            displayStocks(sorted);
-        }
+            let html = sorted.map(s => {
+                let sym = s.d[0];
+                let price = parseFloat(s.d[6]||0);
+                let chg = parseFloat(s.d[12]||0);
+                let vol = parseFloat(s.d[13]||0) * price;
+                let pd = parseFloat(s.d[15]||0);
+                let ath = parseFloat(s.d[26]||0);
+                let athDiff = ath ? (((ath-price)/price)*100).toFixed(0) : '-';
+                let pazar = caches.market[sym] || getPazar(s.d[5]);
 
-        async function loadStocks(retryCount = 3) {
-            try {
-                const response = await fetch(API.SCANNER);
-                const data = await response.json();
-
-                if (data.data && Array.isArray(data.data)) {
-                    allStocks = data.data.filter(stock => {
-                        const marketCap = parseFloat(stock.d[15] || 0);
-                        return marketCap > 0 && marketCap <= 1000000000;
-                    }).sort((a, b) => parseFloat(a.d[15] || 0) - parseFloat(b.d[15] || 0));
-
-                    displayStocks(allStocks);
-                    updateStats();
-
-                    const symbols = allStocks.map(s => s.d[0]);
-                    const batchSize = 50; 
-
-                    for (let i = 0; i < symbols.length; i += batchSize) {
-                        const batch = symbols.slice(i, i + batchSize);
-                        fetchBatchWithRetry(batch.join(','));
-                        await new Promise(resolve => setTimeout(resolve, 100)); 
-                    }
-                } else if (retryCount > 0) {
-                    setTimeout(() => loadStocks(retryCount - 1), 2000);
-                } else {
-                    showError('Veri yüklenemedi');
-                }
-            } catch (error) {
-                if (retryCount > 0) {
-                    setTimeout(() => loadStocks(retryCount - 1), 2000);
-                } else {
-                    showError('Bağlantı hatası: ' + error.message);
-                }
-            }
-        }
-
-        async function fetchBatchWithRetry(batchString, retryCount = 2) {
-            try {
-                const resp = await fetch(API.BATCH + '?symbols=' + encodeURIComponent(batchString));
-                const result = await resp.json();
-                if (result.markets) Object.assign(marketCache, result.markets);
-                if (result.supports) Object.assign(supportCache, result.supports);
-                if (result.dips) Object.assign(dipCache, result.dips);
-                if (result.resistances) Object.assign(resistanceCache, result.resistances);
-                if (result.breakouts) Object.assign(breakoutCache, result.breakouts);
-                sortStocks(currentSortColumn);
-            } catch (err) {
-                if (retryCount > 0) {
-                    setTimeout(() => fetchBatchWithRetry(batchString, retryCount - 1), 1000);
-                }
-            }
-        }
-
-        function displayStocks(stocks) {
-            const tbody = document.getElementById('stockBody');
-            if (!stocks || stocks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" class="no-data">Veri bulunamadı</td></tr>';
-                return;
-            }
-            tbody.innerHTML = stocks.map(stock => {
-                const symbol = stock.d[0] || '';
-                const typespecs = stock.d[5] || [];
-                const marketFromApi = marketCache[symbol];
-                const pazar = marketFromApi || getPazarFromTypespecs(typespecs);
-                const price = parseFloat(stock.d[6] || 0);
-                const change = parseFloat(stock.d[12] || 0).toFixed(2);
-                const volume = parseFloat(stock.d[13] || 0);
-                const volumeTL = volume * price;
-                const marketCap = parseFloat(stock.d[15] || 0);
-                const ath = parseFloat(stock.d[26] || 0);
-                const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(1) : '0.0';
+                // Trend Verileri
+                let supVal = caches.sup[sym], dipVal = caches.dip[sym];
+                let supDist = (supVal && price) ? (((price-supVal)/price)*100).toFixed(1) : '-';
+                let dipTxt = dipVal !== undefined ? dipVal.toFixed(1) : '-';
                 
-                const marketCapText = formatLargeNumber(marketCap);
-                const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
-                const changeSign = change > 0 ? '+' : '';
+                let resVal = caches.res[sym], brkVal = caches.brk[sym];
+                let resDist = (resVal && price) ? (((resVal-price)/price)*100).toFixed(1) : '-';
+                let brkTxt = brkVal !== undefined ? brkVal.toFixed(1) : '-';
 
-                // Destek
-                const supportLevel = supportCache[symbol];
-                const supportDist = supportLevel && price > 0 ? (((price - supportLevel) / price) * 100).toFixed(2) : '-';
-                const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#888');
-                const maxDip = dipCache[symbol];
-                const maxDipText = maxDip !== undefined ? maxDip.toFixed(1) + '%' : '-';
-                const maxDipColor = (maxDip !== undefined && maxDip < -20) ? '#ef4444' : '#666';
-
-                // Direnç
-                const resistanceLevel = resistanceCache[symbol];
-                const resistanceDist = resistanceLevel && price > 0 ? (((resistanceLevel - price) / price) * 100).toFixed(2) : '-';
-                const resistanceColor = resistanceDist < 0 ? '#10b981' : '#ef4444'; 
-                const maxBreakout = breakoutCache[symbol];
-                const maxBreakoutText = maxBreakout !== undefined ? maxBreakout.toFixed(1) + '%' : '-';
-                const maxBreakoutColor = (maxBreakout !== undefined && maxBreakout > 10) ? '#10b981' : '#666';
+                // Renkler
+                let cChg = chg>0?'val-up':(chg<0?'val-down':'val-neu');
+                let cSup = (supDist !== '-' && parseFloat(supDist) < 2) ? 'val-down' : 'val-up'; // Desteğe %2 yaklaştıysa kırmızı
+                let cRes = (resDist !== '-' && parseFloat(resDist) < 2) ? 'val-up' : 'val-down'; // Dirence %2 yaklaştıysa yeşil
 
                 return `<tr>
-                    <td class="symbol" onclick="showChartModal('${symbol}')">${symbol}</td>
-                    <td class="pazar">${pazar}</td>
-                    <td style="text-align: right; font-weight: 600;">${price.toFixed(2)}₺</td>
-                    <td style="text-align: right;" class="change ${changeClass}">${changeSign}${change}%</td>
+                    <td class="col-symbol" onclick="openChart('${sym}')">${sym}</td>
+                    <td class="col-pazar">${pazar}</td>
+                    <td style="text-align:right; font-weight:600;">${price.toFixed(2)}</td>
+                    <td style="text-align:right;" class="${cChg}">${chg}%</td>
                     
-                    <td style="text-align: right;" class="bg-support border-left"><span style="color: ${supportColor}; font-weight: 600;">${supportDist}%</span></td>
-                    <td style="text-align: right;" class="bg-support"><span style="color: ${maxDipColor};">${maxDipText}</span></td>
+                    <td style="text-align:right;" class="bg-sup border-l"><span class="${cSup}">${supDist}%</span></td>
+                    <td style="text-align:right;" class="bg-sup">${dipTxt}%</td>
                     
-                    <td style="text-align: right;" class="bg-resistance border-left"><span style="color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</span></td>
-                    <td style="text-align: right;" class="bg-resistance"><span style="color: ${maxBreakoutColor};">${maxBreakoutText}</span></td>
+                    <td style="text-align:right;" class="bg-res border-l"><span class="${cRes}">${resDist}%</span></td>
+                    <td style="text-align:right;" class="bg-res">${brkTxt}%</td>
                     
-                    <td style="text-align: right; color: #666;">${athDiffPercent}%</td>
-                    <td style="text-align: right;">${formatLargeNumber(volumeTL)}</td>
-                    <td style="text-align: right; color: #555;">${marketCapText}</td>
+                    <td style="text-align:right;" class="border-l val-neu">${athDiff}%</td>
+                    <td style="text-align:right;">${fmtNum(vol)}</td>
+                    <td style="text-align:right; color:#868e96;">${fmtNum(pd)}</td>
                 </tr>`;
             }).join('');
+            
+            document.getElementById('tableBody').innerHTML = html;
         }
 
         function updateStats() {
-            document.getElementById('totalCount').textContent = allStocks.length;
-            const rising = allStocks.filter(s => parseFloat(s.d[12] || 0) > 0).length;
-            const falling = allStocks.filter(s => parseFloat(s.d[12] || 0) < 0).length;
-            document.getElementById('risingCount').textContent = rising;
-            document.getElementById('fallingCount').textContent = falling;
+            document.getElementById('countTotal').innerText = stocksData.length;
+            document.getElementById('countUp').innerText = stocksData.filter(x=>x.d[12]>0).length;
+            document.getElementById('countDown').innerText = stocksData.filter(x=>x.d[12]<0).length;
         }
 
-        function showError(message) {
-            const errorEl = document.getElementById('errorMessage');
-            errorEl.textContent = message;
-            errorEl.classList.add('show');
-        }
-
-        function downloadTableAsImage() {
-            const btn = event.target.closest('button');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
-            html2canvas(document.querySelector('.table-wrapper')).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'bist-analiz-' + new Date().toISOString().slice(0,10) + '.png';
-                link.href = canvas.toDataURL();
-                link.click();
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-download"></i> İndir';
-            });
-        }
-
-        function copyStocksToClipboard() {
-            const text = allStocks.map(s => s.d[0]).join('\\n');
-            navigator.clipboard.writeText(text).then(() => {
-                const btn = event.target.closest('button');
-                const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-check"></i> Kopyalandı!';
-                setTimeout(() => btn.innerHTML = originalHTML, 2000);
-            });
-        }
-
-        async function showChartModal(symbol) {
-            const modal = document.getElementById('chartModal');
-            const title = document.getElementById('chartTitle');
-            title.textContent = symbol + ' - Teknik Analiz';
-            modal.classList.add('show');
-
-            document.getElementById('chartCanvas').innerHTML = `
-                <div class="loading">
-                    <i class="fas fa-spinner fa-spin"></i>
-                    <h3>Grafik yükleniyor...</h3>
-                    <p>${symbol} için veriler alınıyor</p>
-                </div>
-            `;
-
-            try {
-                const response = await fetch(API.CHART + '?symbol=' + encodeURIComponent(symbol));
-                const data = await response.json();
-
-                if (data && Array.isArray(data) && data.length > 0) {
-                    drawCandlestickChart(data, symbol);
-                } else if (data && typeof data === 'object' && !Array.isArray(data)) {
-                    drawCandlestickChart([data], symbol);
-                } else {
-                    showChartError(symbol, "Grafik verisi bulunamadı");
-                }
-            } catch (error) {
-                showChartError(symbol, error.message);
-            }
-        }
-
-        function showChartError(symbol, message) {
-            document.getElementById('chartCanvas').innerHTML = `
-                <div class="loading">
-                    <i class="fas fa-exclamation-triangle" style="color: #ef4444;"></i>
-                    <h3>Hata</h3>
-                    <p>${message}</p>
-                    <p>Hisse: ${symbol}</p>
-                    <button onclick="showChartModal('${symbol}')" style="margin-top: 20px; padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                        Tekrar Dene
-                    </button>
-                </div>
-            `;
-        }
-
-        function closeChartModal() {
-            document.getElementById('chartModal').classList.remove('show');
-            Plotly.purge('chartCanvas');
-        }
-
-        function download2KChart() {
-            const btn = event.target.closest('button');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
-            const title = document.getElementById('chartTitle').textContent;
-            const filename = title.split(' - ')[0] + '-grafik-' + new Date().toISOString().slice(0,10) + '.png';
-            Plotly.downloadImage('chartCanvas', {format: 'png', width: 2560, height: 1440}, filename);
-            setTimeout(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-download"></i> 2K';
-            }, 1500);
-        }
-
-        // --- TEKNİK ANALİZ VE GRAFİK ÇİZİM FONKSİYONLARI ---
-        
-        function calculateMainTrendLines(highs, lows, dates) {
-            const n = highs.length;
-            if (n < 2) return {};
-
-            // 1. Mutlak Zirve
-            let absoluteMaxVal = -Infinity, absoluteMaxIdx = 0;
-            for(let i = 0; i < n; i++) {
-                if(highs[i] > absoluteMaxVal) { absoluteMaxVal = highs[i]; absoluteMaxIdx = i; }
-            }
-            let secondMaxVal = -Infinity, secondMaxIdx = n - 1;
-            const searchStart = absoluteMaxIdx + Math.floor(n * 0.1);
-            for(let i = searchStart; i < n; i++) {
-                if(highs[i] > secondMaxVal) { secondMaxVal = highs[i]; secondMaxIdx = i; }
-            }
-            const absoluteSlope = (highs[secondMaxIdx] - highs[absoluteMaxIdx]) / (secondMaxIdx - absoluteMaxIdx);
-
-            // 2. Ana Direnç
-            let maxVal_r = -Infinity, maxIdx_r = 0;
-            for(let i = 0; i < n * 0.3; i++) { if(highs[i] > maxVal_r) { maxVal_r = highs[i]; maxIdx_r = i; } }
-            let lastMaxVal_r = -Infinity, lastMaxIdx_r = n - 1;
-            for(let i = n - 1; i > n * 0.7; i--) { if(highs[i] > lastMaxVal_r) { lastMaxVal_r = highs[i]; lastMaxIdx_r = i; } }
-            const resistanceSlope = (highs[lastMaxIdx_r] - highs[maxIdx_r]) / (lastMaxIdx_r - maxIdx_r);
-
-            // 3. Ana Destek
-            let minVal = Infinity, minIdx = 0;
-            for(let i = 0; i < n * 0.3; i++) { if(lows[i] < minVal) { minVal = lows[i]; minIdx = i; } }
-            let lastMinVal = Infinity, lastMinIdx = n - 1;
-            for(let i = n - 1; i > n * 0.7; i--) { if(lows[i] < lastMinVal) { lastMinVal = lows[i]; lastMinIdx = i; } }
-            const supportSlope = (lows[lastMinIdx] - lows[minIdx]) / (lastMinIdx - minIdx);
-
-            const projectionDays = 30;
-            const extendedDates = [...dates];
-            const lastDate = new Date(dates[dates.length - 1]);
-            for (let i = 1; i <= projectionDays; i++) {
-                const nextDate = new Date(lastDate);
-                nextDate.setDate(lastDate.getDate() + i);
-                extendedDates.push(nextDate.toISOString().split('T')[0]);
-            }
-
-            const absoluteLine = [], resistanceLine = [], supportLine = [], midTrendLine = [];
-            for (let i = 0; i < extendedDates.length; i++) {
-                const absVal = highs[absoluteMaxIdx] + absoluteSlope * (i - absoluteMaxIdx);
-                const resVal = highs[maxIdx_r] + resistanceSlope * (i - maxIdx_r);
-                const supVal = lows[minIdx] + supportSlope * (i - minIdx);
-                absoluteLine.push(absVal);
-                resistanceLine.push(resVal);
-                supportLine.push(supVal);
-                midTrendLine.push((resVal + supVal) / 2);
-            }
-
-            return {
-                absolutePeak: { x: extendedDates, y: absoluteLine, type: 'scatter', mode: 'lines', name: 'Zirve Trendi', line: { color: '#3b82f6', width: 2, dash: 'dot' } },
-                resistance: { x: extendedDates, y: resistanceLine, type: 'scatter', mode: 'lines', name: 'Ana Direnç', line: { color: '#ef4444', width: 2 } },
-                support: { x: extendedDates, y: supportLine, type: 'scatter', mode: 'lines', name: 'Ana Destek', line: { color: '#10b981', width: 2 } },
-                midTrend: { x: extendedDates, y: midTrendLine, type: 'scatter', mode: 'lines', name: 'Trend Merkezi', line: { color: '#f59e0b', width: 2, dash: 'dash' } }
-            };
-        }
-
-        function calculateCupPattern(highs, lows, dates) {
-            const n = highs.length;
-            if (n < 60) return null;
-            let leftPeakVal = -Infinity, leftPeakIdx = 0;
-            for (let i = 0; i < n - 20; i++) { if (highs[i] > leftPeakVal) { leftPeakVal = highs[i]; leftPeakIdx = i; } }
-            let bottomVal = Infinity, bottomIdx = leftPeakIdx;
-            for (let i = leftPeakIdx; i < n; i++) { if (lows[i] < bottomVal) { bottomVal = lows[i]; bottomIdx = i; } }
-            let rightPeakVal = -Infinity, rightPeakIdx = n - 1;
-            for (let i = bottomIdx; i < n; i++) { if (highs[i] > rightPeakVal) { rightPeakVal = highs[i]; rightPeakIdx = i; } }
+        // --- Chart & Modal ---
+        async function openChart(sym) {
+            document.getElementById('chartModal').classList.add('show');
+            document.getElementById('modalTitle').innerText = sym + ' Teknik Analiz';
+            document.getElementById('chartCanvas').innerHTML = '<div class="loading-overlay"><i class="fas fa-circle-notch fa-spin fa-3x"></i></div>';
             
-            const cupDepth = leftPeakVal - bottomVal;
-            if (cupDepth <= 0 || (bottomIdx - leftPeakIdx) < 10 || (rightPeakIdx - bottomIdx) < 10) return null;
-            const targetVal = leftPeakVal + cupDepth;
-
-            const extendedDates = [...dates];
-            const projectionDays = 90;
-            const lastDate = new Date(dates[dates.length - 1]);
-            for (let i = 1; i <= projectionDays; i++) {
-                const nextDate = new Date(lastDate);
-                nextDate.setDate(lastDate.getDate() + i);
-                extendedDates.push(nextDate.toISOString().split('T')[0]);
+            try {
+                let res = await fetch(API.CHART + '?s=' + sym);
+                let data = await res.json();
+                drawChart(sym, data);
+            } catch(e) {
+                document.getElementById('chartCanvas').innerHTML = '<div class="loading-overlay">Grafik yüklenemedi</div>';
             }
-
-            return {
-                cup: { x: [dates[leftPeakIdx], dates[bottomIdx], dates[rightPeakIdx]], y: [leftPeakVal, bottomVal, highs[rightPeakIdx]], type: 'scatter', mode: 'lines', name: 'Çanak', line: { color: '#a855f7', width: 4, shape: 'spline' } },
-                target: { x: [dates[leftPeakIdx], extendedDates[extendedDates.length - 1]], y: [targetVal, targetVal], type: 'scatter', mode: 'lines', name: `Katlama: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
-                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
-            };
         }
 
-        function drawCandlestickChart(data, symbol) {
-            const dates = [], opens = [], highs = [], lows = [], closes = [];
-            if (Array.isArray(data)) {
-                data.forEach(item => {
-                    let dateStr = '', open=0, high=0, low=0, close=0;
-                    if (item && typeof item === 'object') {
-                        dateStr = item.Date || item.tarih || '';
-                        if (dateStr && dateStr.includes('.')) {
-                            const parts = dateStr.split(' ')[0].split('.');
-                            if (parts.length === 3) dateStr = `${parts[0]}-${parts[1]}-${parts[2]}`;
-                        }
-                        open = parseFloat(item.fAcilis || item.Open || item.open || 0);
-                        high = parseFloat(item.fYuksek || item.High || item.high || 0);
-                        low = parseFloat(item.fDusuk || item.Low || item.low || 0);
-                        close = parseFloat(item.fKapanis || item.Close || item.close || 0);
-                    } else if (Array.isArray(item) && item.length >= 5) {
-                        dateStr = new Date(item[0] * 1000).toISOString().split('T')[0];
-                        open = parseFloat(item[1]); high = parseFloat(item[2]); low = parseFloat(item[3]); close = parseFloat(item[4]);
-                    }
-                    if (dateStr && !isNaN(close) && close > 0) {
-                        dates.push(dateStr); opens.push(open>0?open:close); highs.push(high>0?high:Math.max(open,close)); lows.push(low>0?low:Math.min(open,close)); closes.push(close);
-                    }
-                });
-            }
+        function drawChart(sym, raw) {
+            if(!raw || raw.length < 50) return;
+            
+            let dates = raw.map(x => new Date(x.t*1000).toISOString().split('T')[0]);
+            let o = raw.map(x=>x.o), h = raw.map(x=>x.h), l = raw.map(x=>x.l), c = raw.map(x=>x.c);
 
-            if (dates.length < 5) {
-                document.getElementById('chartCanvas').innerHTML = `<div class="loading"><h3>Yeterli veri yok</h3></div>`;
-                return;
-            }
-
-            const trace1 = {
-                x: dates, open: opens, high: highs, low: lows, close: closes,
-                type: 'candlestick', name: symbol,
-                increasing: { line: {color: '#10b981', width: 2}, fillcolor: 'rgba(16, 185, 129, 0.7)' },
-                decreasing: { line: {color: '#ef4444', width: 2}, fillcolor: 'rgba(239, 68, 68, 0.7)' }
+            // Lines (Backend'den hesaplanan verileri görselleştirmek için tekrar JS'de basit çizim)
+            // Not: Gerçek linear regression çizgisini backend'den array olarak da isteyebiliriz ama
+            // basitlik adına burada sadece mumları ve varsa backend hesap değerlerini çizdireceğiz.
+            
+            let trace = {
+                x: dates, open: o, high: h, low: l, close: c,
+                type: 'candlestick', name: sym,
+                increasing: {line: {color: '#12b886'}}, decreasing: {line: {color: '#fa5252'}}
             };
-
-            const mainTrends = calculateMainTrendLines(highs, lows, dates);
-            const cupPattern = calculateCupPattern(highs, lows, dates);
-            const lastPrice = closes[closes.length - 1];
-            const traceLastPrice = {
-                x: [dates[dates.length - 1], dates[dates.length - 1]],
-                y: [Math.min(...lows) * 0.95, Math.max(...highs) * 1.05],
-                type: 'scatter', mode: 'lines', name: `Son: ${lastPrice.toFixed(2)}₺`,
-                line: { color: '#6b7280', width: 1, dash: 'dot' }
+            
+            let layout = {
+                dragmode: 'zoom', showlegend: false,
+                xaxis: {rangeslider: {visible: false}},
+                yaxis: {autorange: true},
+                margin: {t:20,b:40,l:40,r:40},
+                height: 600
             };
-
-            const allTraces = [trace1, mainTrends.absolutePeak, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
-            if (cupPattern) { allTraces.push(cupPattern.cup); allTraces.push(cupPattern.target); allTraces.push(cupPattern.base); }
-
-            const layout = {
-                title: { text: `${symbol} - Fiyat Grafiği` },
-                xaxis: { title: 'Tarih', type: 'category', rangeslider: { visible: true, thickness: 0.05 }, showgrid: false },
-                yaxis: { title: 'Fiyat (₺)', tickprefix: '₺', showgrid: false },
-                height: 800, margin: {l: 50, r: 50, t: 50, b: 50},
-                plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff', hovermode: 'x unified'
-            };
-            Plotly.newPlot('chartCanvas', allTraces, layout, { responsive: true });
+            
+            Plotly.newPlot('chartCanvas', [trace], layout);
         }
 
-        window.onclick = function(event) {
-            const modal = document.getElementById('chartModal');
-            if (event.target === modal) closeChartModal();
+        function closeModal() { document.getElementById('chartModal').classList.remove('show'); }
+        function downloadTable() { 
+            html2canvas(document.querySelector('.table-container')).then(c => {
+                let a = document.createElement('a'); a.download='analiz.png'; a.href=c.toDataURL(); a.click();
+            }); 
+        }
+        function copyTable() {
+            navigator.clipboard.writeText(stocksData.map(x=>x.d[0]).join(','));
+        }
+        function downloadChart() {
+             Plotly.downloadImage('chartCanvas', {format:'png', width:1920, height:1080, filename:'grafik'});
         }
 
-        loadStocks();
+        init();
     </script>
 </body>
 </html>
 """
 
-# --- BACKEND FONKSİYONLARI ---
+# --- BACKEND LOGIC (Python) ---
 
-def fetch_stock_scanner_data():
-    post_data = {
-        "columns": [
-            "name", "description", "logoid", "update_mode", "type", "typespecs",
-            "close", "pricescale", "minmov", "fractional", "minmove2", "currency",
-            "change", "volume", "relative_volume_10d_calc", "market_cap_basic",
-            "fundamental_currency_code", "price_earnings_ttm", "earnings_per_share_diluted_ttm",
-            "earnings_per_share_diluted_yoy_growth_ttm", "dividends_yield_current",
-            "sector.tr", "market", "sector", "AnalystRating", "AnalystRating.tr",
-            "High.All", "Low.All", "RSI"
-        ],
-        "ignore_unknown_fields": False,
-        "options": {"lang": "tr"},
-        "range": [0, 999999],
-        "sort": {"sortBy": "name", "sortOrder": "asc", "nullsFirst": False},
-        "preset": "all_stocks",
-        "filter": [{"left": "market", "operation": "equal", "right": "turkey"}]
-    }
-
+def get_data_from_ideal(url):
     try:
-        response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=45)
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"Scanner Error: {e}")
-    return None
+        r = requests.get(url, verify=False, timeout=8)
+        if r.status_code == 200:
+            # iDeal data genellikle iso-8859-9 (Turkish) gelir
+            return json.loads(r.content.decode('iso-8859-9'))
+    except: return None
 
-def fetch_market_info(symbol):
-    if not symbol: return None
-    url = f"{IDEAL_DATA_URL}/cmd=SirketProfil?symbol={symbol}?lang=tr"
-    try:
-        response = requests.get(url, verify=False, timeout=8)
-        if response.status_code == 200:
-            content = response.content.decode('iso-8859-9')
-            data = json.loads(content)
-            if isinstance(data, dict):
-                return data.get('Piyasa')
-    except:
-        pass
-    return None
-
-def fetch_chart_data(symbol):
-    if not symbol: return []
-    url = f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={symbol}?periyot=G?bar=999999?lang=tr"
-    try:
-        response = requests.get(url, verify=False, timeout=10)
-        if response.status_code == 200:
-            content = response.content.decode('iso-8859-9')
-            data = json.loads(content)
-            if isinstance(data, list) or isinstance(data, dict):
-                return data
-    except:
-        pass
-    return []
-
-def calculate_trend_levels(raw_data):
-    lows = []
+# --- GELİŞMİŞ TREND ALGORİTMASI (Linear Regression & Pivots) ---
+def calc_trend_advanced(candles):
+    # candles format: [{'o':..., 'h':..., 'l':..., 'c':...}, ...] or list of lists
+    # Veriyi normalize et
     highs = []
+    lows = []
+    closes = []
     
-    if isinstance(raw_data, list):
-        for item in raw_data:
-            l = 0; h = 0
-            if isinstance(item, list) and len(item) > 3:
-                l = float(item[3])
-                h = float(item[2])
-            elif isinstance(item, dict):
-                l = float(item.get('fDusuk') or item.get('Low') or item.get('low') or 0)
-                h = float(item.get('fYuksek') or item.get('High') or item.get('high') or 0)
-            if l > 0: lows.append(l)
-            if h > 0: highs.append(h)
+    # Veri formatını güvenli hale getir
+    if not candles: return None
     
-    if len(lows) < 50: return None
+    for c in candles:
+        if isinstance(c, dict):
+            highs.append(float(c.get('fYuksek', c.get('h', 0))))
+            lows.append(float(c.get('fDusuk', c.get('l', 0))))
+            closes.append(float(c.get('fKapanis', c.get('c', 0))))
+        elif isinstance(c, list) and len(c) >= 5: # [date, o, h, l, c]
+            highs.append(float(c[2]))
+            lows.append(float(c[3]))
+            closes.append(float(c[4]))
+            
+    n = len(closes)
+    if n < 60: return None # Yetersiz veri
+
+    # 1. DESTEK ANALİZİ (Linear Regression on Local Minima)
+    # Yerel dipleri bul (Window = 5)
+    local_min_indices = []
+    for i in range(2, n-2):
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            local_min_indices.append(i)
     
-    n = len(lows)
-    
-    # 1. ANA DESTEK HESAPLAMASI (Dipleri baz alır)
-    min_idx1, min_val1 = 0, lows[0]
-    limit_low = int(n * 0.3)
-    for i in range(limit_low):
-        if lows[i] < min_val1: min_val1, min_idx1 = lows[i], i
+    # Eğer yeterince dip yoksa en düşüğü al
+    if len(local_min_indices) < 2:
+        support_val = min(lows)
+        support_slope = 0
+    else:
+        # Basit Lineer Regresyon: y = mx + c
+        # X: indices, Y: prices
+        sum_x = sum(local_min_indices)
+        sum_y = sum([lows[i] for i in local_min_indices])
+        sum_xy = sum([i * lows[i] for i in local_min_indices])
+        sum_xx = sum([i*i for i in local_min_indices])
+        count = len(local_min_indices)
         
-    min_idx2, min_val2 = n - 1, lows[n - 1]
-    limit_high = int(n * 0.7)
-    for i in range(n - 1, limit_high, -1):
-        if lows[i] < min_val2: min_val2, min_idx2 = lows[i], i
+        try:
+            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
+        except: slope = 0 # Sıfıra bölme hatası olursa
         
-    support_slope = (lows[min_idx2] - lows[min_idx1]) / (min_idx2 - min_idx1) if min_idx2 != min_idx1 else 0
-    current_support = lows[min_idx1] + support_slope * (n - 1 - min_idx1)
-    
-    # Destek Altı Max Sarkma Hesabı
-    max_dip_percent = 0.0
+        # Intercept (c) hesapla: Ortalama çizgiyi verir.
+        # Ancak DESTEK çizgisi en alttan geçmeli.
+        # Bu yüzden tüm dipler için (y - mx) hesaplayıp EN KÜÇÜĞÜNÜ (min_c) alıyoruz.
+        min_intercept = float('inf')
+        for i in range(n):
+            # Sadece dipleri değil, tüm düşükleri kontrol et ki fiyat çizginin altına inmesin
+            # Performans için sadece yerel dipleri kontrol edelim
+            val = lows[i] - slope * i
+            if val < min_intercept:
+                min_intercept = val
+        
+        support_slope = slope
+        current_support = support_slope * (n-1) + min_intercept
+
+    # Destek Analizi: Max Sarkma
+    max_dip = 0.0
     for i in range(n):
-        date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
-        if date_support_val > 0:
-            diff = lows[i] - date_support_val
-            if diff < 0:
-                dip_pct = (diff / date_support_val) * 100
-                if dip_pct < max_dip_percent:
-                    max_dip_percent = dip_pct
-                    
-    # 2. ANA DİRENÇ HESAPLAMASI (Tepeleri baz alır)
-    max_idx1, max_val1 = 0, highs[0]
-    for i in range(limit_low):
-        if highs[i] > max_val1: max_val1, max_idx1 = highs[i], i
+        line_val = support_slope * i + (current_support - support_slope*(n-1)) # Denklemi geri kur
+        if line_val > 0:
+            diff = lows[i] - line_val
+            if diff < 0: # Çizginin altında
+                pct = (diff / line_val) * 100
+                if pct < max_dip: max_dip = pct
+
+    # 2. DİRENÇ ANALİZİ (Linear Regression on Local Maxima)
+    local_max_indices = []
+    for i in range(2, n-2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            local_max_indices.append(i)
+            
+    if len(local_max_indices) < 2:
+        res_val = max(highs)
+        res_slope = 0
+    else:
+        sum_x = sum(local_max_indices)
+        sum_y = sum([highs[i] for i in local_max_indices])
+        sum_xy = sum([i * highs[i] for i in local_max_indices])
+        sum_xx = sum([i*i for i in local_max_indices])
+        count = len(local_max_indices)
         
-    max_idx2, max_val2 = n - 1, highs[n - 1]
-    for i in range(n - 1, limit_high, -1):
-        if highs[i] > max_val2: max_val2, max_idx2 = highs[i], i
+        try:
+            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
+        except: slope = 0
         
-    resistance_slope = (highs[max_idx2] - highs[max_idx1]) / (max_idx2 - max_idx1) if max_idx2 != max_idx1 else 0
-    current_resistance = highs[max_idx1] + resistance_slope * (n - 1 - max_idx1)
-    
-    # Direnç Üstü Max Çıkış (Breakout) Hesabı
-    max_breakout_percent = 0.0
+        # Intercept: Direnç çizgisi en üstten geçmeli -> Max Intercept
+        max_intercept = float('-inf')
+        for i in range(n):
+            val = highs[i] - slope * i
+            if val > max_intercept:
+                max_intercept = val
+                
+        res_slope = slope
+        current_resistance = res_slope * (n-1) + max_intercept
+
+    # Direnç Analizi: Max Aşım (Breakout)
+    max_breakout = 0.0
     for i in range(n):
-        date_res_val = highs[max_idx1] + resistance_slope * (i - max_idx1)
-        if date_res_val > 0:
-            diff = highs[i] - date_res_val
-            if diff > 0: 
-                brk_pct = (diff / date_res_val) * 100
-                if brk_pct > max_breakout_percent:
-                    max_breakout_percent = brk_pct
+        line_val = res_slope * i + (current_resistance - res_slope*(n-1))
+        if line_val > 0:
+            diff = highs[i] - line_val
+            if diff > 0:
+                pct = (diff / line_val) * 100
+                if pct > max_breakout: max_breakout = pct
 
     return {
-        'currentSupport': current_support, 'maxDip': max_dip_percent,
-        'currentResistance': current_resistance, 'maxBreakout': max_breakout_percent
+        'sup': current_support, 'dip': max_dip,
+        'res': current_resistance, 'brk': max_breakout
     }
 
-def process_batch_symbol(symbol):
-    market_info = fetch_market_info(symbol)
-    chart_data = fetch_chart_data(symbol)
-    support_val = None
-    max_dip_val = None
-    resistance_val = None
-    max_breakout_val = None
+def process_symbol(sym):
+    # Market Bilgisi
+    mkt = None
+    try:
+        r = requests.get(f"{IDEAL_DATA_URL}/cmd=SirketProfil?symbol={sym}?lang=tr", verify=False, timeout=5)
+        if r.status_code==200: mkt = json.loads(r.content.decode('iso-8859-9')).get('Piyasa')
+    except: pass
+
+    # Grafik Verisi
+    chart = []
+    try:
+        r = requests.get(f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={sym}?periyot=G?bar=400?lang=tr", verify=False, timeout=8) # Son 400 bar yeterli
+        if r.status_code==200: chart = json.loads(r.content.decode('iso-8859-9'))
+    except: pass
+
+    trend = calc_trend_advanced(chart)
     
-    if chart_data and len(chart_data) >= 50:
-        trend_data = calculate_trend_levels(chart_data)
-        if trend_data:
-            if trend_data['currentSupport'] > 0:
-                support_val = round(trend_data['currentSupport'], 2)
-            max_dip_val = round(trend_data['maxDip'], 2)
-            
-            if trend_data['currentResistance'] > 0:
-                resistance_val = round(trend_data['currentResistance'], 2)
-            max_breakout_val = round(trend_data['maxBreakout'], 2)
-            
-    return symbol, market_info, support_val, max_dip_val, resistance_val, max_breakout_val
+    return sym, mkt, trend
 
-# --- ROTAS ---
-
+# --- ROUTES ---
 @app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
+def home(): return render_template_string(HTML_TEMPLATE)
 
-@app.route('/api/scanner')
-def api_scanner():
-    data = fetch_stock_scanner_data()
-    return jsonify(data if data else {'error': 'Data fetch failed'})
-
-@app.route('/api/market')
-def api_market():
-    symbol = request.args.get('symbol', '')
-    data = fetch_market_info(symbol)
-    return jsonify(data)
+@app.route('/api/scanner', methods=['GET', 'POST'])
+def scanner():
+    # TradingView Scanner Payload
+    payload = {
+        "columns": ["name","description","logoid","update_mode","type","typespecs","close","pricescale","minmov","fractional","minmove2","currency","change","volume","relative_volume_10d_calc","market_cap_basic","fundamental_currency_code","price_earnings_ttm","earnings_per_share_diluted_ttm","earnings_per_share_diluted_yoy_growth_ttm","dividends_yield_current","sector.tr","market","sector","AnalystRating","AnalystRating.tr","High.All","Low.All","RSI"],
+        "ignore_unknown_fields": False, "options": {"lang": "tr"}, "range": [0, 9999], 
+        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"}, 
+        "preset": "all_stocks", "filter": [{"left": "market", "operation": "equal", "right": "turkey"}]
+    }
+    try:
+        r = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=payload, timeout=30)
+        return jsonify(r.json())
+    except Exception as e: return jsonify({'error': str(e)})
 
 @app.route('/api/chart')
-def api_chart():
-    symbol = request.args.get('symbol', '')
-    data = fetch_chart_data(symbol)
-    return jsonify(data)
+def chart():
+    s = request.args.get('s')
+    # Grafik için temiz format döndür
+    try:
+        r = requests.get(f"{IDEAL_DATA_URL}/cmd=CHART2?symbol={s}?periyot=G?bar=500?lang=tr", verify=False, timeout=10)
+        raw = json.loads(r.content.decode('iso-8859-9'))
+        # Frontend için minimize et: [time, open, high, low, close]
+        clean = []
+        if isinstance(raw, list):
+            for x in raw:
+                # ideal data formatı bazen değişebilir, kontrol et
+                # Genelde: {'Date':..., 'fAcilis':...} veya list
+                if isinstance(x, dict):
+                    # Tarih parse (YYYY-MM-DD HH:MM:SS) -> timestamp
+                    # Basitlik için sadece kapanışları alıyoruz gibi görünüyor ama mum grafiği için OHLC lazım
+                    clean.append({
+                        't': int(time.mktime(time.strptime(x['Date'].split('.')[0], "%Y-%m-%d %H:%M:%S"))), 
+                        'o': x['fAcilis'], 'h': x['fYuksek'], 'l': x['fDusuk'], 'c': x['fKapanis']
+                    })
+        return jsonify(clean)
+    except: return jsonify([])
 
-@app.route('/api/batch-all')
-def api_batch_all():
-    symbols_param = request.args.get('symbols', '')
-    if not symbols_param:
-        return jsonify({'markets': {}, 'supports': {}, 'dips': {}, 'resistances': {}, 'breakouts': {}})
-        
-    symbols = [s for s in symbols_param.split(',') if s]
-    markets = {}
-    supports = {}
-    dips = {}
-    resistances = {}
-    breakouts = {}
+@app.route('/api/batch')
+def batch():
+    syms = request.args.get('symbols', '').split(',')
+    syms = [s for s in syms if s]
     
-    pool = Pool(10)
-    jobs = [pool.spawn(process_batch_symbol, sym) for sym in symbols]
+    out = {'market':{}, 'sup':{}, 'dip':{}, 'res':{}, 'brk':{}}
+    
+    pool = Pool(15) # Concurrent workers
+    jobs = [pool.spawn(process_symbol, s) for s in syms]
     gevent.joinall(jobs)
-
-    for job in jobs:
+    
+    for j in jobs:
         try:
-            if job.value:
-                sym, mkt, sup, dip, res, brk = job.value
-                if mkt: markets[sym] = mkt
-                if sup: supports[sym] = sup
-                if dip is not None: dips[sym] = dip
-                if res: resistances[sym] = res
-                if brk is not None: breakouts[sym] = brk
+            if j.value:
+                s, m, t = j.value
+                if m: out['market'][s] = m
+                if t:
+                    out['sup'][s] = t['sup']
+                    out['dip'][s] = t['dip']
+                    out['res'][s] = t['res']
+                    out['brk'][s] = t['brk']
         except: pass
-                
-    return jsonify({'markets': markets, 'supports': supports, 'dips': dips, 'resistances': resistances, 'breakouts': breakouts})
+        
+    return jsonify(out)
 
 if __name__ == '__main__':
     requests.packages.urllib3.disable_warnings()
     from gevent.pywsgi import WSGIServer
+    print("Sunucu 8080 portunda başlatılıyor...")
     http_server = WSGIServer(('0.0.0.0', 8080), app)
     http_server.serve_forever()
