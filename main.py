@@ -1,6 +1,6 @@
 from gevent import monkey; monkey.patch_all()
 import sys
-# Rekürsiyon limitini artırıyoruz
+# Rekürsiyon limitini artırıyoru
 sys.setrecursionlimit(2000)
 
 from flask import Flask, request, jsonify, render_template_string
