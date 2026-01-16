@@ -9,7 +9,6 @@ import json
 import gevent
 from gevent.pool import Pool
 import time
-import math
 
 app = Flask(__name__)
 
@@ -27,13 +26,14 @@ HEADERS = {
 }
 
 # --- FRONTEND (HTML/CSS/JS) ---
+# SIKIŞTIRILMIŞ KOMPAKT TASARIM
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Analiz Paneli</title>
+    <title>BIST Yan Tahta Analizi (< 1 Milyar TL)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -41,47 +41,58 @@ HTML_TEMPLATE = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; background: #f8f9fa; font-family: 'Inter', sans-serif; color: #333; }
-        .container { max-width: 1500px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
-        header { background: white; padding: 24px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .header-content { padding: 0 24px; display: flex; justify-content: space-between; align-items: center; }
-        .header-title { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; }
+        /* TAM EKRAN GENİŞLİK */
+        .container { max-width: 98%; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+        header { background: white; padding: 12px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .header-content { padding: 0 20px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
         .header-title i { color: #0066cc; }
-        .stats { display: flex; gap: 24px; flex: 1; margin-left: 40px; }
+        .stats { display: flex; gap: 20px; flex: 1; margin-left: 30px; }
         .stat { display: flex; flex-direction: column; }
-        .stat-label { font-size: 12px; color: #666; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-        .stat-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+        .stat-label { font-size: 10px; color: #666; text-transform: uppercase; font-weight: 600; }
+        .stat-value { font-size: 16px; font-weight: 700; margin-top: 2px; }
         .stat-value.positive { color: #10b981; }
         .stat-value.negative { color: #ef4444; }
-        main { flex: 1; padding: 24px; overflow: auto; }
+        main { flex: 1; padding: 15px; overflow: auto; }
         .table-wrapper { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; }
-        thead { background: #f3f4f6; }
-        th { padding: 16px; text-align: left; font-size: 13px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e7eb; cursor: pointer; user-select: none; }
-        th:hover { background: #e5e7eb; }
-        td { padding: 14px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+        
+        /* KOMPAKT TABLO */
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        thead { background: #f3f4f6; position: sticky; top: 0; z-index: 10; }
+        th { padding: 8px 6px; text-align: left; font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; border-bottom: 2px solid #e5e7eb; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        th:hover { background: #e5e7eb; color: #000; }
+        td { padding: 6px 6px; border-bottom: 1px solid #f0f0f0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         tr:hover { background: #f9fafb; }
-        .symbol { font-weight: 600; color: #0066cc; cursor: pointer; }
+        
+        .symbol { font-weight: 700; color: #0066cc; cursor: pointer; }
         .symbol:hover { text-decoration: underline; }
-        .pazar { color: #555; font-size: 13px; font-weight: 500; }
-        .change { font-weight: 600; text-align: right; }
+        .pazar { color: #666; font-size: 11px; font-weight: 500; }
+        .change { font-weight: 700; text-align: right; }
         .change.up { color: #10b981; }
         .change.down { color: #ef4444; }
-        .no-data { text-align: center; padding: 60px 20px; color: #999; }
-        .error-message { background: #fef2f2; color: #991b1b; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; display: none; }
+        .no-data { text-align: center; padding: 40px; color: #999; }
+        .error-message { background: #fef2f2; color: #991b1b; padding: 10px; border-radius: 6px; margin-bottom: 10px; display: none; }
         .error-message.show { display: block; }
-        .download-btn { background: #10b981; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-left: 8px; }
+        
+        .download-btn { background: #10b981; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px; display: flex; align-items: center; gap: 5px; margin-left: 8px; }
         .download-btn:hover { background: #059669; }
         .download-btn:disabled { background: #ccc; cursor: not-allowed; }
         .download-btn:nth-child(2) { background: #3b82f6; }
         .download-btn:nth-child(2):hover { background: #2563eb; }
+        
+        .bg-support { background-color: rgba(16, 185, 129, 0.05); }
+        .bg-resistance { background-color: rgba(239, 68, 68, 0.05); }
+        .border-left { border-left: 2px solid #e5e7eb; }
+
+        /* MODAL */
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); }
         .modal.show { display: flex; }
-        .modal-content { background-color: white; margin: auto; padding: 20px; border-radius: 8px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; position: relative; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; padding-bottom: 15px; }
-        .modal-title { font-size: 20px; font-weight: 700; color: #333; }
-        .close-btn { background: none; border: none; font-size: 28px; cursor: pointer; color: #999; }
+        .modal-content { background-color: white; margin: auto; padding: 15px; border-radius: 8px; width: 95%; max-width: 1400px; max-height: 95vh; overflow-y: auto; position: relative; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e5e7eb; padding-bottom: 10px; }
+        .modal-title { font-size: 18px; font-weight: 700; color: #333; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; }
         .close-btn:hover { color: #333; }
-        .chart-container { position: relative; height: 1440px; margin-top: 20px; }
+        .chart-container { position: relative; height: 80vh; margin-top: 10px; }
         #chartCanvas { height: 100%; width: 100%; }
         .loading { text-align: center; padding: 50px; color: #666; }
         .loading i { font-size: 48px; margin-bottom: 20px; }
@@ -92,8 +103,8 @@ HTML_TEMPLATE = """
         <header>
             <div class="header-content">
                 <div class="header-title">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Hisse Senetleri</span>
+                    <i class="fas fa-layer-group"></i>
+                    <span>BIST Yan Tahta (< 1 Milyar TL)</span>
                 </div>
                 <div class="stats">
                     <div class="stat">
@@ -124,17 +135,20 @@ HTML_TEMPLATE = """
                 <table id="stockTable">
                     <thead>
                         <tr>
-                            <th onclick="sortStocks(0)">Hisse Adı</th>
-                            <th>Pazar</th>
-                            <th style="text-align: right;" onclick="sortStocks(1)">Fiyat (₺)</th>
-                            <th style="text-align: right;" onclick="sortStocks(2)">Değişim %</th>
-                            <th style="text-align: right;" onclick="sortStocks(6)">Destek (%)</th>
-                            <th style="text-align: right;" onclick="sortStocks(7)">Destek Altı Max %</th>
-                            <th style="text-align: right;" onclick="sortStocks(8)">Direnç (%)</th>
-                            <th style="text-align: right;" onclick="sortStocks(9)">Direnç Üstü Max %</th>
-                            <th style="text-align: right;" onclick="sortStocks(3)">ATH Farkı (%)</th>
-                            <th style="text-align: right;" onclick="sortStocks(4)">Hacim (₺)</th>
-                            <th style="text-align: right;" onclick="sortStocks(5)">Piyasa Değeri</th>
+                            <th style="width: 80px;" onclick="sortStocks(0)">Hisse</th>
+                            <th style="width: 90px;" onclick="sortStocks(1)">Pazar</th>
+                            <th style="text-align: right; width: 80px;" onclick="sortStocks(2)">Fiyat</th>
+                            <th style="text-align: right; width: 70px;" onclick="sortStocks(3)">Değ.%</th>
+                            
+                            <th style="text-align: right; width: 90px;" class="bg-support border-left" onclick="sortStocks(6)">Destek %</th>
+                            <th style="text-align: right; width: 90px;" class="bg-support" onclick="sortStocks(7)">Destek Altı Max %</th>
+                            
+                            <th style="text-align: right; width: 90px;" class="bg-resistance border-left" onclick="sortStocks(8)">Direnç %</th>
+                            <th style="text-align: right; width: 90px;" class="bg-resistance" onclick="sortStocks(9)">Direnç Üstü Max %</th>
+                            
+                            <th style="text-align: right; width: 80px;" onclick="sortStocks(3)">ATH Fark %</th>
+                            <th style="text-align: right; width: 100px;" onclick="sortStocks(4)">Hacim</th>
+                            <th style="text-align: right; width: 90px;" onclick="sortStocks(5)">Piyasa Değ.</th>
                         </tr>
                     </thead>
                     <tbody id="stockBody">
@@ -156,7 +170,7 @@ HTML_TEMPLATE = """
                 <div class="modal-title" id="chartTitle">Hisse Detayı</div>
                 <div style="display: flex; gap: 8px;">
                     <button class="download-btn" style="background: #3b82f6; margin-left: 0;" onclick="download2KChart()">
-                        <i class="fas fa-download"></i> 2K İndir
+                        <i class="fas fa-download"></i> 2K
                     </button>
                     <button class="close-btn" onclick="closeChartModal()">&times;</button>
                 </div>
@@ -191,17 +205,17 @@ HTML_TEMPLATE = """
         function getPazarFromTypespecs(typespecs) {
             if (!typespecs || !Array.isArray(typespecs) || typespecs.length === 0) return 'Bilinmiyor';
             const typespec = typespecs[0] || '';
-            if (typespec.includes('st_yildiz') || typespec.toLowerCase().includes('stars')) return 'Yıldız Pazar';
-            if (typespec.includes('st_ana') || typespec.toLowerCase().includes('main')) return 'Ana Pazar';
-            if (typespec.includes('st_alt') || typespec.toLowerCase().includes('sub')) return 'Alt Pazar';
+            if (typespec.includes('st_yildiz') || typespec.toLowerCase().includes('stars')) return 'Yıldız';
+            if (typespec.includes('st_ana') || typespec.toLowerCase().includes('main')) return 'Ana';
+            if (typespec.includes('st_alt') || typespec.toLowerCase().includes('sub')) return 'Alt';
             if (typespec.toLowerCase().includes('watchlist')) return 'Yakın İzleme';
-            return typespec || 'Bilinmiyor';
+            return typespec || 'Diğer';
         }
 
         function formatLargeNumber(num) {
             if (num >= 1000000000) return (num / 1000000000).toFixed(2) + ' Mlr';
-            if (num >= 1000000) return (num / 1000000).toFixed(2) + ' Mly';
-            if (num >= 1000) return (num / 1000).toFixed(1) + ' Bin';
+            if (num >= 1000000) return (num / 1000000).toFixed(2) + ' Mn';
+            if (num >= 1000) return (num / 1000).toFixed(1) + ' B';
             return num.toFixed(0);
         }
 
@@ -217,14 +231,12 @@ HTML_TEMPLATE = """
                 let valueA, valueB;
                 switch(columnIndex) {
                     case 0: valueA = (a.d[0] || '').toLowerCase(); valueB = (b.d[0] || '').toLowerCase(); return sortAscending ? valueA.localeCompare(valueB) : valueB.localeCompare(valueA);
-                    case 1: valueA = parseFloat(a.d[6] || 0); valueB = parseFloat(b.d[6] || 0); break;
-                    case 2: valueA = parseFloat(a.d[12] || 0); valueB = parseFloat(b.d[12] || 0); break;
-                    case 3:
-                        const priceA = parseFloat(a.d[6] || 0); const athA = parseFloat(a.d[26] || 0);
-                        valueA = athA > 0 ? (((athA - priceA) / priceA) * 100) : 0;
-                        const priceB = parseFloat(b.d[6] || 0); const athB = parseFloat(b.d[26] || 0);
-                        valueB = athB > 0 ? (((athB - priceB) / priceB) * 100) : 0;
-                        break;
+                    case 1: 
+                        let pazarA = marketCache[a.d[0]] || getPazarFromTypespecs(a.d[5]);
+                        let pazarB = marketCache[b.d[0]] || getPazarFromTypespecs(b.d[5]);
+                        return sortAscending ? pazarA.localeCompare(pazarB) : pazarB.localeCompare(pazarA);
+                    case 2: valueA = parseFloat(a.d[6] || 0); valueB = parseFloat(b.d[6] || 0); break;
+                    case 3: valueA = parseFloat(a.d[12] || 0); valueB = parseFloat(b.d[12] || 0); break;
                     case 4: 
                         valueA = parseFloat(a.d[13] || 0) * parseFloat(a.d[6] || 0); 
                         valueB = parseFloat(b.d[13] || 0) * parseFloat(b.d[6] || 0); 
@@ -254,8 +266,14 @@ HTML_TEMPLATE = """
                         valueA = breakoutCache[a.d[0]] || 0;
                         valueB = breakoutCache[b.d[0]] || 0;
                         break;
+                    case 10: // ATH Fark
+                        const priceA2 = parseFloat(a.d[6] || 0); const athA = parseFloat(a.d[26] || 0);
+                        valueA = athA > 0 ? (((athA - priceA2) / priceA2) * 100) : 0;
+                        const priceB2 = parseFloat(b.d[6] || 0); const athB = parseFloat(b.d[26] || 0);
+                        valueB = athB > 0 ? (((athB - priceB2) / priceB2) * 100) : 0;
+                        break;
                 }
-                if (columnIndex !== 0) return sortAscending ? valueA - valueB : valueB - valueA;
+                if (columnIndex !== 0 && columnIndex !== 1) return sortAsc ? valueA - valueB : valueB - valueA;
                 return 0;
             });
 
@@ -269,6 +287,7 @@ HTML_TEMPLATE = """
                 const data = await response.json();
 
                 if (data.data && Array.isArray(data.data)) {
+                    // --- FİLTRELEME: 1 MİLYAR TL ALTI ---
                     allStocks = data.data.filter(stock => {
                         const marketCap = parseFloat(stock.d[15] || 0);
                         return marketCap > 0 && marketCap <= 1000000000;
@@ -335,7 +354,7 @@ HTML_TEMPLATE = """
 
                 const marketCap = parseFloat(stock.d[15] || 0);
                 const ath = parseFloat(stock.d[26] || 0);
-                const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(2) : '0.00';
+                const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(1) : '0.0';
                 const marketCapText = formatLargeNumber(marketCap);
                 const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
                 const changeSign = change > 0 ? '+' : '';
@@ -350,27 +369,26 @@ HTML_TEMPLATE = """
 
                 // Direnç Hesaplamaları
                 const resistanceLevel = resistanceCache[symbol];
-                // Dirence uzaklık: ((Direnç - Fiyat) / Fiyat) * 100. Pozitifse direnç yukarda, negatifse fiyat kırmış.
                 const resistanceDist = resistanceLevel && price > 0 ? (((resistanceLevel - price) / price) * 100).toFixed(2) : '-';
-                const resistanceColor = resistanceDist < 0 ? '#10b981' : '#ef4444'; // Negatifse (kırmışsa) yeşil, pozitifse (takılmışsa) kırmızı
+                const resistanceColor = resistanceDist < 0 ? '#10b981' : '#ef4444'; 
                 const maxBreakout = breakoutCache[symbol];
                 const maxBreakoutText = maxBreakout !== undefined ? maxBreakout.toFixed(2) + '%' : '-';
                 const maxBreakoutColor = (maxBreakout !== undefined && maxBreakout > 10) ? '#10b981' : '#666';
 
                 return `<tr>
                     <td class="symbol" onclick="showChartModal('${symbol}')">${symbol}</td>
-                    <td class="pazar">${pazar || 'Bilinmiyor'}</td>
+                    <td class="pazar">${pazar}</td>
                     <td style="text-align: right; font-weight: 600;">${price.toFixed(2)}₺</td>
                     <td style="text-align: right;" class="change ${changeClass}">${changeSign}${change}%</td>
                     
-                    <td style="text-align: right; color: ${supportColor}; font-weight: 600;">${supportDist}%</td>
-                    <td style="text-align: right; color: ${maxDipColor};">${maxDipText}</td>
+                    <td style="text-align: right; border-left: 2px solid #eee;" class="bg-support"><span style="color: ${supportColor}; font-weight: 600;">${supportDist}%</span></td>
+                    <td style="text-align: right;" class="bg-support"><span style="color: ${maxDipColor};">${maxDipText}</span></td>
                     
-                    <td style="text-align: right; color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</td>
-                    <td style="text-align: right; color: ${maxBreakoutColor};">${maxBreakoutText}</td>
+                    <td style="text-align: right; border-left: 2px solid #eee;" class="bg-resistance"><span style="color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</span></td>
+                    <td style="text-align: right;" class="bg-resistance"><span style="color: ${maxBreakoutColor};">${maxBreakoutText}</span></td>
                     
                     <td style="text-align: right; color: #666;">${athDiffPercent}%</td>
-                    <td style="text-align: right;">${formatLargeNumber(volumeTL)} ₺</td>
+                    <td style="text-align: right;">${formatLargeNumber(volumeTL)}</td>
                     <td style="text-align: right; color: #666;">${marketCapText}</td>
                 </tr>`;
             }).join('');
@@ -393,10 +411,10 @@ HTML_TEMPLATE = """
         function downloadTableAsImage() {
             const btn = event.target.closest('button');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> İndiriliyor...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
             html2canvas(document.querySelector('.table-wrapper')).then(canvas => {
                 const link = document.createElement('a');
-                link.download = 'hisse-senetleri-' + new Date().toISOString().slice(0,10) + '.png';
+                link.download = 'bist-analiz-' + new Date().toISOString().slice(0,10) + '.png';
                 link.href = canvas.toDataURL();
                 link.click();
                 btn.disabled = false;
@@ -466,7 +484,7 @@ HTML_TEMPLATE = """
         function download2KChart() {
             const btn = event.target.closest('button');
             btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 2K İndiriliyor...';
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Hazırlanıyor...';
             const title = document.getElementById('chartTitle').textContent;
             const filename = title.split(' - ')[0] + '-grafik-2k-' + new Date().toISOString().slice(0,10) + '.png';
             Plotly.downloadImage('chartCanvas', {format: 'png', width: 2560, height: 1440}, filename);
@@ -476,91 +494,37 @@ HTML_TEMPLATE = """
             }, 1500);
         }
 
-        // --- TEKNİK ANALİZ VE GRAFİK ÇİZİM FONKSİYONLARI ---
+        // --- TEKNİK ANALİZ (KLASİK 2 NOKTA YÖNTEMİ + HATA GİDERME) ---
         
         function calculateMainTrendLines(highs, lows, dates) {
             const n = highs.length;
-            if (n < 60) return {};
+            if (n < 2) return {};
 
-            // Linear Regression hesaplaması için yardımcı fonksiyonlar
-            function calculateLinearRegression(indices, values) {
-                const sumX = indices.reduce((a, b) => a + b, 0);
-                const sumY = values.reduce((a, b) => a + b, 0);
-                const sumXY = indices.reduce((a, b, i) => a + b * values[i], 0);
-                const sumXX = indices.reduce((a, b) => a + b * b, 0);
-                const count = indices.length;
-                
-                const slope = (count * sumXY - sumX * sumY) / (count * sumXX - sumX * sumX);
-                const intercept = (sumY - slope * sumX) / count;
-                return { slope, intercept };
+            // 1. Mutlak Zirve (Absolute Peak)
+            let absoluteMaxVal = -Infinity, absoluteMaxIdx = 0;
+            for(let i = 0; i < n; i++) {
+                if(highs[i] > absoluteMaxVal) { absoluteMaxVal = highs[i]; absoluteMaxIdx = i; }
             }
+            let secondMaxVal = -Infinity, secondMaxIdx = n - 1;
+            const searchStart = absoluteMaxIdx + Math.floor(n * 0.1);
+            for(let i = searchStart; i < n; i++) {
+                if(highs[i] > secondMaxVal) { secondMaxVal = highs[i]; secondMaxIdx = i; }
+            }
+            const absoluteSlope = (highs[secondMaxIdx] - highs[absoluteMaxIdx]) / (secondMaxIdx - absoluteMaxIdx);
 
-            // Tüm veriler üzerinden genel eğim (slope) hesapla
-            // Bu, trendin ana yönünü belirler
-            const indices = Array.from({length: n}, (_, i) => i);
-            
-            // 1. DESTEK (Lows üzerinden)
-            // Yerel dipleri bul (Local Minima)
-            const localMinIndices = [];
-            const localMinValues = [];
-            for(let i=2; i<n-2; i++) {
-                if(lows[i] < lows[i-1] && lows[i] < lows[i-2] && lows[i] < lows[i+1] && lows[i] < lows[i+2]) {
-                    localMinIndices.push(i);
-                    localMinValues.push(lows[i]);
-                }
-            }
-            
-            let supportSlope = 0;
-            let supportIntercept = 0;
-            
-            if (localMinIndices.length >= 2) {
-                // Yerel dipler üzerinden regresyon hesabı
-                const reg = calculateLinearRegression(localMinIndices, localMinValues);
-                supportSlope = reg.slope;
-                
-                // Kanalın en altına oturması için intercept'i ayarla (en düşük sapmayı bul)
-                let minOffset = Infinity;
-                for(let i=0; i<n; i++) {
-                    const theoreticalVal = supportSlope * i;
-                    const diff = lows[i] - theoreticalVal;
-                    if(diff < minOffset) minOffset = diff;
-                }
-                supportIntercept = minOffset;
-            } else {
-                // Yeterli dip yoksa basitçe en düşük noktadan düz çizgi
-                supportSlope = 0;
-                supportIntercept = Math.min(...lows);
-            }
+            // 2. Ana Direnç (Baştaki tepe ve sondaki tepeyi birleştirir)
+            let maxVal_r = -Infinity, maxIdx_r = 0;
+            for(let i = 0; i < n * 0.3; i++) { if(highs[i] > maxVal_r) { maxVal_r = highs[i]; maxIdx_r = i; } }
+            let lastMaxVal_r = -Infinity, lastMaxIdx_r = n - 1;
+            for(let i = n - 1; i > n * 0.7; i--) { if(highs[i] > lastMaxVal_r) { lastMaxVal_r = highs[i]; lastMaxIdx_r = i; } }
+            const resistanceSlope = (highs[lastMaxIdx_r] - highs[maxIdx_r]) / (lastMaxIdx_r - maxIdx_r);
 
-            // 2. DİRENÇ (Highs üzerinden)
-            const localMaxIndices = [];
-            const localMaxValues = [];
-            for(let i=2; i<n-2; i++) {
-                if(highs[i] > highs[i-1] && highs[i] > highs[i-2] && highs[i] > highs[i+1] && highs[i] > highs[i+2]) {
-                    localMaxIndices.push(i);
-                    localMaxValues.push(highs[i]);
-                }
-            }
-
-            let resistanceSlope = 0;
-            let resistanceIntercept = 0;
-
-            if (localMaxIndices.length >= 2) {
-                const reg = calculateLinearRegression(localMaxIndices, localMaxValues);
-                resistanceSlope = reg.slope;
-                
-                // Kanalın en üstüne oturması için intercept ayarla
-                let maxOffset = -Infinity;
-                for(let i=0; i<n; i++) {
-                    const theoreticalVal = resistanceSlope * i;
-                    const diff = highs[i] - theoreticalVal;
-                    if(diff > maxOffset) maxOffset = diff;
-                }
-                resistanceIntercept = maxOffset;
-            } else {
-                resistanceSlope = 0;
-                resistanceIntercept = Math.max(...highs);
-            }
+            // 3. Ana Destek (Baştaki dip ve sondaki dibi birleştirir)
+            let minVal = Infinity, minIdx = 0;
+            for(let i = 0; i < n * 0.3; i++) { if(lows[i] < minVal) { minVal = lows[i]; minIdx = i; } }
+            let lastMinVal = Infinity, lastMinIdx = n - 1;
+            for(let i = n - 1; i > n * 0.7; i--) { if(lows[i] < lastMinVal) { lastMinVal = lows[i]; lastMinIdx = i; } }
+            const supportSlope = (lows[lastMinIdx] - lows[minIdx]) / (lastMinIdx - minIdx);
 
             const projectionDays = 30;
             const extendedDates = [...dates];
@@ -571,86 +535,52 @@ HTML_TEMPLATE = """
                 extendedDates.push(nextDate.toISOString().split('T')[0]);
             }
 
-            const resistanceLine = [], supportLine = [], midTrendLine = [];
+            const absoluteLine = [], resistanceLine = [], supportLine = [], midTrendLine = [];
             for (let i = 0; i < extendedDates.length; i++) {
-                const resVal = resistanceSlope * i + resistanceIntercept;
-                const supVal = supportSlope * i + supportIntercept;
-                
+                const absVal = highs[absoluteMaxIdx] + absoluteSlope * (i - absoluteMaxIdx);
+                const resVal = highs[maxIdx_r] + resistanceSlope * (i - maxIdx_r);
+                const supVal = lows[minIdx] + supportSlope * (i - minIdx);
+                absoluteLine.push(absVal);
                 resistanceLine.push(resVal);
                 supportLine.push(supVal);
                 midTrendLine.push((resVal + supVal) / 2);
             }
 
             return {
-                absolutePeak: { x: [], y: [], type: 'scatter' }, // Artık kullanılmıyor ama yapı bozulmasın diye boş
+                absolutePeak: { x: extendedDates, y: absoluteLine, type: 'scatter', mode: 'lines', name: 'Zirve Trendi', line: { color: '#3b82f6', width: 2, dash: 'dot' } },
                 resistance: { x: extendedDates, y: resistanceLine, type: 'scatter', mode: 'lines', name: 'Ana Direnç', line: { color: '#ef4444', width: 2 } },
                 support: { x: extendedDates, y: supportLine, type: 'scatter', mode: 'lines', name: 'Ana Destek', line: { color: '#10b981', width: 2 } },
                 midTrend: { x: extendedDates, y: midTrendLine, type: 'scatter', mode: 'lines', name: 'Trend Merkezi', line: { color: '#f59e0b', width: 2, dash: 'dash' } }
             };
         }
-        
-        
 
         function calculateCupPattern(highs, lows, dates) {
             const n = highs.length;
             if (n < 60) return null;
-
-            // Daha gelişmiş Çanak Tespiti
-            // Strateji: Sol Tepe, Dip ve Sağ Tepe arasındaki ilişkiyi ve zamanı kontrol et.
-            
-            // 1. En düşük noktayı bul (Orta bölge)
-            let minVal = Infinity, minIdx = 0;
-            // Ortadaki %60'lık kısımda dip ara (Kenarlara çok yakın olmasın)
-            const startSearch = Math.floor(n * 0.2);
-            const endSearch = Math.floor(n * 0.8);
-            
-            for(let i = startSearch; i < endSearch; i++) {
-                if(lows[i] < minVal) { minVal = lows[i]; minIdx = i; }
-            }
-
-            // 2. Sol Tepeyi Bul (Dip noktasından öncesi)
             let leftPeakVal = -Infinity, leftPeakIdx = 0;
-            for(let i = 0; i < minIdx; i++) {
-                if(highs[i] > leftPeakVal) { leftPeakVal = highs[i]; leftPeakIdx = i; }
-            }
-
-            // 3. Sağ Tepeyi Bul (Dip noktasından sonrası)
+            for (let i = 0; i < n - 20; i++) { if (highs[i] > leftPeakVal) { leftPeakVal = highs[i]; leftPeakIdx = i; } }
+            let bottomVal = Infinity, bottomIdx = leftPeakIdx;
+            for (let i = leftPeakIdx; i < n; i++) { if (lows[i] < bottomVal) { bottomVal = lows[i]; bottomIdx = i; } }
             let rightPeakVal = -Infinity, rightPeakIdx = n - 1;
-            for(let i = minIdx + 1; i < n; i++) {
-                if(highs[i] > rightPeakVal) { rightPeakVal = highs[i]; rightPeakIdx = i; }
-            }
-
-            // Kriterler:
-            // A. Formasyon Süresi: En az 20 bar
-            if ((rightPeakIdx - leftPeakIdx) < 20) return null;
+            for (let i = bottomIdx; i < n; i++) { if (highs[i] > rightPeakVal) { rightPeakVal = highs[i]; rightPeakIdx = i; } }
             
-            // B. Derinlik: Çanak çok sığ olmamalı (en az %5)
-            const cupDepth = Math.max(leftPeakVal, rightPeakVal) - minVal;
-            if ((cupDepth / minVal) < 0.05) return null;
-            
-            // C. Simetri: Sol ve Sağ tepeler birbirine yakın olmalı (Max %20 fark)
-            const peakDiff = Math.abs(leftPeakVal - rightPeakVal);
-            const avgPeak = (leftPeakVal + rightPeakVal) / 2;
-            if ((peakDiff / avgPeak) > 0.20) return null; 
-
-            // Eğer buraya geldiyse geçerli bir çanak adayıdır
-            const targetVal = rightPeakVal + cupDepth;
+            const cupDepth = leftPeakVal - bottomVal;
+            if (cupDepth <= 0 || (bottomIdx - leftPeakIdx) < 10 || (rightPeakIdx - bottomIdx) < 10) return null;
+            const targetVal = leftPeakVal + cupDepth;
 
             const extendedDates = [...dates];
-            const projectionDays = 60;
+            const projectionDays = 90;
             const lastDate = new Date(dates[dates.length - 1]);
             for (let i = 1; i <= projectionDays; i++) {
                 const nextDate = new Date(lastDate);
                 nextDate.setDate(lastDate.getDate() + i);
                 extendedDates.push(nextDate.toISOString().split('T')[0]);
             }
-            
-            
 
             return {
-                cup: { x: [dates[leftPeakIdx], dates[minIdx], dates[rightPeakIdx]], y: [leftPeakVal, minVal, rightPeakVal], type: 'scatter', mode: 'lines+markers', name: 'Çanak', line: { color: '#a855f7', width: 3, shape: 'spline' } },
-                target: { x: [dates[rightPeakIdx], extendedDates[extendedDates.length - 1]], y: [rightPeakVal, targetVal], type: 'scatter', mode: 'lines', name: `Hedef: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
-                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, rightPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
+                cup: { x: [dates[leftPeakIdx], dates[bottomIdx], dates[rightPeakIdx]], y: [leftPeakVal, bottomVal, highs[rightPeakIdx]], type: 'scatter', mode: 'lines', name: 'Çanak', line: { color: '#a855f7', width: 4, shape: 'spline' } },
+                target: { x: [dates[leftPeakIdx], extendedDates[extendedDates.length - 1]], y: [targetVal, targetVal], type: 'scatter', mode: 'lines', name: `Katlama: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
+                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
             };
         }
 
@@ -701,7 +631,7 @@ HTML_TEMPLATE = """
                 line: { color: '#6b7280', width: 1, dash: 'dot' }
             };
 
-            const allTraces = [trace1, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
+            const allTraces = [trace1, mainTrends.absolutePeak, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
             if (cupPattern) { allTraces.push(cupPattern.cup); allTraces.push(cupPattern.target); allTraces.push(cupPattern.base); }
 
             const layout = {
@@ -747,7 +677,6 @@ def fetch_stock_scanner_data():
     }
 
     try:
-        # Timeout'u biraz artırdık ve verify=True bıraktık (TradingView için SSL gerekli)
         response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=45)
         if response.status_code == 200:
             return response.json()
@@ -783,7 +712,7 @@ def fetch_chart_data(symbol):
         pass
     return []
 
-# --- DÜZELTİLEN FONKSİYON: Lineer Regresyon ile Profesyonel Destek/Direnç ---
+# --- HATA DÜZELTİLMİŞ TREND HESAPLAMA (ÖNCEKİ YÖNTEM) ---
 def calculate_trend_levels(raw_data):
     lows = []
     highs = []
@@ -800,106 +729,63 @@ def calculate_trend_levels(raw_data):
             if l > 0: lows.append(l)
             if h > 0: highs.append(h)
     
+    if len(lows) < 50: return None
+    
     n = len(lows)
-    # Hata kontrolü: En az 20 bar olsun
-    if n < 20: return None
     
-    # -------------------------------------------------------------
-    # 1. DESTEK HESAPLAMASI (Linear Regression Channel Lower Line)
-    # -------------------------------------------------------------
-    
-    # Yerel dipleri bul (Local Minima) - Gürültüyü azaltmak için
-    local_min_indices = []
-    local_min_values = []
-    for i in range(2, n-2):
-        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-            local_min_indices.append(i)
-            local_min_values.append(lows[i])
-            
-    # Eğer yeterince yerel dip yoksa, tüm datayı kullanabiliriz veya uçları alabiliriz
-    if len(local_min_indices) < 3:
-        # Fallback: Basit Min-Max
-        support_val = min(lows)
-        support_slope = 0
-        current_support = support_val
+    # --- DESTEK HESAPLAMA (2 Nokta Yöntemi - İlk %30 ve Son %30) ---
+    min_idx1, min_val1 = 0, lows[0]
+    limit_low = int(n * 0.3)
+    for i in range(limit_low):
+        if lows[i] < min_val1: min_val1, min_idx1 = lows[i], i
+        
+    min_idx2, min_val2 = n - 1, lows[n - 1]
+    limit_high = int(n * 0.7)
+    for i in range(n - 1, limit_high, -1):
+        if lows[i] < min_val2: min_val2, min_idx2 = lows[i], i
+        
+    # HATA ÖNLEME: min_idx2 ile min_idx1 eşitse eğim sıfır olsun (Sıfıra bölünme hatası engeli)
+    if min_idx2 != min_idx1:
+        support_slope = (lows[min_idx2] - lows[min_idx1]) / (min_idx2 - min_idx1)
     else:
-        # Least Squares Method (En Küçük Kareler)
-        sum_x = sum(local_min_indices)
-        sum_y = sum(local_min_values)
-        sum_xy = sum([local_min_indices[i] * local_min_values[i] for i in range(len(local_min_indices))])
-        sum_xx = sum([i*i for i in local_min_indices])
-        count = len(local_min_indices)
+        support_slope = 0
         
-        try:
-            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
-        except: slope = 0
-        
-        # Intercept (c) hesapla. Destek çizgisi tüm fiyatların ALTINDA olmalı.
-        # Bu yüzden hesaplanan eğime (slope) göre tüm barların sapmasını (diff) bulup
-        # en alt noktaya (minimum sapma) çizgiyi kaydırıyoruz.
-        min_intercept = float('inf')
-        for i in range(n):
-            val = lows[i] - slope * i
-            if val < min_intercept:
-                min_intercept = val
-        
-        support_slope = slope
-        # Şu anki bar (n-1) için destek değeri
-        current_support = support_slope * (n-1) + min_intercept
-
+    current_support = lows[min_idx1] + support_slope * (n - 1 - min_idx1)
+    
     # Destek Altı Max Sarkma
     max_dip_percent = 0.0
     for i in range(n):
-        date_support_val = support_slope * i + (current_support - support_slope*(n-1))
+        date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
         if date_support_val > 0:
             diff = lows[i] - date_support_val
-            if diff < 0: # Desteğin altına sarkmış
+            if diff < 0:
                 dip_pct = (diff / date_support_val) * 100
                 if dip_pct < max_dip_percent:
                     max_dip_percent = dip_pct
                     
-    # -------------------------------------------------------------
-    # 2. DİRENÇ HESAPLAMASI (Linear Regression Channel Upper Line)
-    # -------------------------------------------------------------
-    local_max_indices = []
-    local_max_values = []
-    for i in range(2, n-2):
-        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-            local_max_indices.append(i)
-            local_max_values.append(highs[i])
-            
-    if len(local_max_indices) < 3:
-        res_val = max(highs)
-        res_slope = 0
-        current_resistance = res_val
+    # --- DİRENÇ HESAPLAMA (2 Nokta Yöntemi) ---
+    max_idx1, max_val1 = 0, highs[0]
+    for i in range(limit_low):
+        if highs[i] > max_val1: max_val1, max_idx1 = highs[i], i
+        
+    max_idx2, max_val2 = n - 1, highs[n - 1]
+    for i in range(n - 1, limit_high, -1):
+        if highs[i] > max_val2: max_val2, max_idx2 = highs[i], i
+        
+    if max_idx2 != max_idx1:
+        resistance_slope = (highs[max_idx2] - highs[max_idx1]) / (max_idx2 - max_idx1)
     else:
-        sum_x = sum(local_max_indices)
-        sum_y = sum(local_max_values)
-        sum_xy = sum([local_max_indices[i] * local_max_values[i] for i in range(len(local_max_indices))])
-        sum_xx = sum([i*i for i in local_max_indices])
-        count = len(local_max_indices)
+        resistance_slope = 0
         
-        try:
-            slope = (count * sum_xy - sum_x * sum_y) / (count * sum_xx - sum_x * sum_x)
-        except: slope = 0
-        
-        # Intercept: Direnç çizgisi tüm fiyatların ÜSTÜNDE olmalı. Max sapmaya kaydır.
-        max_intercept = float('-inf')
-        for i in range(n):
-            val = highs[i] - slope * i
-            if val > max_intercept:
-                max_intercept = val
-                
-        res_slope = slope
-        current_resistance = res_slope * (n-1) + max_intercept
-
+    current_resistance = highs[max_idx1] + resistance_slope * (n - 1 - max_idx1)
+    
     # Direnç Üstü Max Çıkış (Breakout)
     max_breakout_percent = 0.0
     for i in range(n):
-        date_res_val = res_slope * i + (current_resistance - res_slope*(n-1))
+        date_res_val = highs[max_idx1] + resistance_slope * (i - max_idx1)
         if date_res_val > 0:
             diff = highs[i] - date_res_val
-            if diff > 0: # Direncin üzerine çıkmış
+            if diff > 0: # Direncin üzerinde
                 brk_pct = (diff / date_res_val) * 100
                 if brk_pct > max_breakout_percent:
                     max_breakout_percent = brk_pct
@@ -918,15 +804,18 @@ def process_batch_symbol(symbol):
     max_breakout_val = None
     
     if chart_data and len(chart_data) >= 50:
-        trend_data = calculate_trend_levels(chart_data)
-        if trend_data:
-            if trend_data['currentSupport'] > 0:
-                support_val = round(trend_data['currentSupport'], 2)
-            max_dip_val = round(trend_data['maxDip'], 2)
-            
-            if trend_data['currentResistance'] > 0:
-                resistance_val = round(trend_data['currentResistance'], 2)
-            max_breakout_val = round(trend_data['maxBreakout'], 2)
+        try:
+            trend_data = calculate_trend_levels(chart_data)
+            if trend_data:
+                if trend_data['currentSupport'] > 0:
+                    support_val = round(trend_data['currentSupport'], 2)
+                max_dip_val = round(trend_data['maxDip'], 2)
+                
+                if trend_data['currentResistance'] > 0:
+                    resistance_val = round(trend_data['currentResistance'], 2)
+                max_breakout_val = round(trend_data['maxBreakout'], 2)
+        except:
+            pass # Hata durumunda boş geç
             
     return symbol, market_info, support_val, max_dip_val, resistance_val, max_breakout_val
 
