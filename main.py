@@ -32,7 +32,7 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Borsa İstanbul Analiz Paneli (Gevent)</title>
+    <title>Borsa İstanbul Analiz Paneli (Tam Trend Analizi)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -40,7 +40,7 @@ HTML_TEMPLATE = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; background: #f8f9fa; font-family: 'Inter', sans-serif; color: #333; }
-        .container { max-width: 1400px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
+        .container { max-width: 1600px; margin: 0 auto; height: 100%; display: flex; flex-direction: column; }
         header { background: white; padding: 24px 0; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         .header-content { padding: 0 24px; display: flex; justify-content: space-between; align-items: center; }
         .header-title { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; }
@@ -84,6 +84,10 @@ HTML_TEMPLATE = """
         #chartCanvas { height: 100%; width: 100%; }
         .loading { text-align: center; padding: 50px; color: #666; }
         .loading i { font-size: 48px; margin-bottom: 20px; }
+        
+        /* Yeni Tablo Sütunları İçin */
+        .trend-col-support { background-color: rgba(16, 185, 129, 0.05); }
+        .trend-col-resistance { background-color: rgba(239, 68, 68, 0.05); }
     </style>
 </head>
 <body>
@@ -123,20 +127,24 @@ HTML_TEMPLATE = """
                 <table id="stockTable">
                     <thead>
                         <tr>
-                            <th onclick="sortStocks(0)">Hisse Adı</th>
-                            <th>Pazar</th>
-                            <th style="text-align: right;" onclick="sortStocks(1)">Fiyat (₺)</th>
-                            <th style="text-align: right;" onclick="sortStocks(2)">Değişim %</th>
-                            <th style="text-align: right;" onclick="sortStocks(3)">ATH Farkı (%)</th>
-                            <th style="text-align: right;" onclick="sortStocks(6)">Al (%)</th>
-                            <th style="text-align: right;" onclick="sortStocks(7)">Destek Altı Max %</th>
-                            <th style="text-align: right;" onclick="sortStocks(4)">Hacim (₺)</th>
-                            <th style="text-align: right;" onclick="sortStocks(5)">Piyasa Değeri</th>
+                            <th onclick="sortStocks(0)">Hisse</th>
+                            <th style="text-align: right;" onclick="sortStocks(1)">Fiyat</th>
+                            <th style="text-align: right;" onclick="sortStocks(2)">Değ.%</th>
+                            
+                            <th style="text-align: right; border-left: 2px solid #ddd;" class="trend-col-support" onclick="sortStocks(6)">Destek %</th>
+                            <th style="text-align: right;" class="trend-col-support" onclick="sortStocks(7)">Destek Altı Max %</th>
+                            
+                            <th style="text-align: right; border-left: 2px solid #ddd;" class="trend-col-resistance" onclick="sortStocks(8)">Direnç %</th>
+                            <th style="text-align: right;" class="trend-col-resistance" onclick="sortStocks(9)">Direnç Üstü Max %</th>
+                            
+                            <th style="text-align: right;" onclick="sortStocks(3)">ATH Fark %</th>
+                            <th style="text-align: right;" onclick="sortStocks(4)">Hacim</th>
+                            <th style="text-align: right;" onclick="sortStocks(5)">PD</th>
                         </tr>
                     </thead>
                     <tbody id="stockBody">
                         <tr>
-                            <td colspan="9" class="no-data">
+                            <td colspan="10" class="no-data">
                                 <i class="fas fa-spinner fa-spin" style="font-size: 24px;"></i><br><br>
                                 Veriler yükleniyor...
                             </td>
@@ -173,7 +181,9 @@ HTML_TEMPLATE = """
         let allStocks = [];
         let marketCache = {};
         let supportCache = {};
-        let dipCache = {}; // Destek altı maksimum düşüş verisi için cache
+        let dipCache = {}; 
+        let resistanceCache = {};
+        let breakoutCache = {};
         let currentSortColumn = 5;
         let sortAscending = true;
 
@@ -182,16 +192,6 @@ HTML_TEMPLATE = """
             BATCH: '/api/batch-all',
             CHART: '/api/chart'
         };
-
-        function getPazarFromTypespecs(typespecs) {
-            if (!typespecs || !Array.isArray(typespecs) || typespecs.length === 0) return 'Bilinmiyor';
-            const typespec = typespecs[0] || '';
-            if (typespec.includes('st_yildiz') || typespec.toLowerCase().includes('stars')) return 'Yıldız Pazar';
-            if (typespec.includes('st_ana') || typespec.toLowerCase().includes('main')) return 'Ana Pazar';
-            if (typespec.includes('st_alt') || typespec.toLowerCase().includes('sub')) return 'Alt Pazar';
-            if (typespec.toLowerCase().includes('watchlist')) return 'Yakın İzleme';
-            return typespec || 'Bilinmiyor';
-        }
 
         function formatLargeNumber(num) {
             if (num >= 1000000000) return (num / 1000000000).toFixed(2) + ' Mlr';
@@ -225,7 +225,7 @@ HTML_TEMPLATE = """
                         valueB = parseFloat(b.d[13] || 0) * parseFloat(b.d[6] || 0); 
                         break;
                     case 5: valueA = parseFloat(a.d[15] || 0); valueB = parseFloat(b.d[15] || 0); break;
-                    case 6: 
+                    case 6: // Destek
                         const supA = supportCache[a.d[0]];
                         const pA = parseFloat(a.d[6] || 0);
                         valueA = supA && pA > 0 ? ((pA - supA) / pA) * 100 : -999;
@@ -233,9 +233,21 @@ HTML_TEMPLATE = """
                         const pB = parseFloat(b.d[6] || 0);
                         valueB = supB && pB > 0 ? ((pB - supB) / pB) * 100 : -999;
                         break;
-                    case 7: // Yeni kolon: Destek Altı Max %
+                    case 7: // Destek Altı Max
                         valueA = dipCache[a.d[0]] || 0;
                         valueB = dipCache[b.d[0]] || 0;
+                        break;
+                    case 8: // Direnç
+                        const resA = resistanceCache[a.d[0]];
+                        const prA = parseFloat(a.d[6] || 0);
+                        valueA = resA && prA > 0 ? ((resA - prA) / prA) * 100 : 999;
+                        const resB = resistanceCache[b.d[0]];
+                        const prB = parseFloat(b.d[6] || 0);
+                        valueB = resB && prB > 0 ? ((resB - prB) / prB) * 100 : 999;
+                        break;
+                    case 9: // Direnç Üstü Max
+                        valueA = breakoutCache[a.d[0]] || 0;
+                        valueB = breakoutCache[b.d[0]] || 0;
                         break;
                 }
                 if (columnIndex !== 0) return sortAscending ? valueA - valueB : valueB - valueA;
@@ -288,7 +300,9 @@ HTML_TEMPLATE = """
                 const result = await resp.json();
                 if (result.markets) Object.assign(marketCache, result.markets);
                 if (result.supports) Object.assign(supportCache, result.supports);
-                if (result.dips) Object.assign(dipCache, result.dips); // Yeni veri: Dips
+                if (result.dips) Object.assign(dipCache, result.dips);
+                if (result.resistances) Object.assign(resistanceCache, result.resistances);
+                if (result.breakouts) Object.assign(breakoutCache, result.breakouts);
                 sortStocks(currentSortColumn);
             } catch (err) {
                 if (retryCount > 0) {
@@ -300,20 +314,15 @@ HTML_TEMPLATE = """
         function displayStocks(stocks) {
             const tbody = document.getElementById('stockBody');
             if (!stocks || stocks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="no-data">Veri bulunamadı</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="no-data">Veri bulunamadı</td></tr>';
                 return;
             }
             tbody.innerHTML = stocks.map(stock => {
                 const symbol = stock.d[0] || '';
-                const typespecs = stock.d[5] || [];
-                const marketFromApi = marketCache[symbol];
-                const pazar = marketFromApi || getPazarFromTypespecs(typespecs);
                 const price = parseFloat(stock.d[6] || 0);
                 const change = parseFloat(stock.d[12] || 0).toFixed(2);
-
                 const volume = parseFloat(stock.d[13] || 0);
                 const volumeTL = volume * price;
-
                 const marketCap = parseFloat(stock.d[15] || 0);
                 const ath = parseFloat(stock.d[26] || 0);
                 const athDiffPercent = ath > 0 ? (((ath - price) / price) * 100).toFixed(2) : '0.00';
@@ -321,24 +330,35 @@ HTML_TEMPLATE = """
                 const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
                 const changeSign = change > 0 ? '+' : '';
 
+                // Destek
                 const supportLevel = supportCache[symbol];
                 const supportDist = supportLevel && price > 0 ? (((price - supportLevel) / price) * 100).toFixed(2) : '-';
                 const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#666');
-
-                // Yeni veri hesaplaması
                 const maxDip = dipCache[symbol];
                 const maxDipText = maxDip !== undefined ? maxDip.toFixed(2) + '%' : '-';
-                // Eğer -%20'den fazla inmişse kırmızı yap, yoksa gri kalsın
                 const maxDipColor = (maxDip !== undefined && maxDip < -20) ? '#ef4444' : '#666';
+
+                // Direnç
+                const resistanceLevel = resistanceCache[symbol];
+                const resistanceDist = resistanceLevel && price > 0 ? (((resistanceLevel - price) / price) * 100).toFixed(2) : '-';
+                // Direnç farkı negatifse (kırmışsa) YEŞİL, pozitifse (dirence takılmışsa) NÖTR/KIRMIZI
+                const resistanceColor = resistanceDist < 0 ? '#10b981' : '#ef4444'; 
+                const maxBreakout = breakoutCache[symbol];
+                const maxBreakoutText = maxBreakout !== undefined ? maxBreakout.toFixed(2) + '%' : '-';
+                const maxBreakoutColor = (maxBreakout !== undefined && maxBreakout > 10) ? '#10b981' : '#666';
 
                 return `<tr>
                     <td class="symbol" onclick="showChartModal('${symbol}')">${symbol}</td>
-                    <td class="pazar">${pazar || 'Bilinmiyor'}</td>
                     <td style="text-align: right; font-weight: 600;">${price.toFixed(2)}₺</td>
                     <td style="text-align: right;" class="change ${changeClass}">${changeSign}${change}%</td>
+                    
+                    <td style="text-align: right; border-left: 2px solid #eee;" class="trend-col-support"><span style="color: ${supportColor}; font-weight: 600;">${supportDist}%</span></td>
+                    <td style="text-align: right;" class="trend-col-support"><span style="color: ${maxDipColor};">${maxDipText}</span></td>
+                    
+                    <td style="text-align: right; border-left: 2px solid #eee;" class="trend-col-resistance"><span style="color: ${resistanceColor}; font-weight: 600;">${resistanceDist}%</span></td>
+                    <td style="text-align: right;" class="trend-col-resistance"><span style="color: ${maxBreakoutColor};">${maxBreakoutText}</span></td>
+                    
                     <td style="text-align: right; color: #666;">${athDiffPercent}%</td>
-                    <td style="text-align: right; color: ${supportColor}; font-weight: 600;">${supportDist}%</td>
-                    <td style="text-align: right; color: ${maxDipColor};">${maxDipText}</td>
                     <td style="text-align: right;">${formatLargeNumber(volumeTL)} ₺</td>
                     <td style="text-align: right; color: #666;">${marketCapText}</td>
                 </tr>`;
@@ -664,21 +684,30 @@ def fetch_chart_data(symbol):
         pass
     return []
 
+# --- BU FONKSİYON GÜNCELLENDİ ---
 def calculate_trend_levels(raw_data):
     lows = []
+    highs = []
     
     if isinstance(raw_data, list):
         for item in raw_data:
-            l = 0
+            l = 0; h = 0
             if isinstance(item, list) and len(item) > 3:
                 l = float(item[3])
+                h = float(item[2])
             elif isinstance(item, dict):
                 l = float(item.get('fDusuk') or item.get('Low') or item.get('low') or 0)
+                h = float(item.get('fYuksek') or item.get('High') or item.get('high') or 0)
             if l > 0: lows.append(l)
+            if h > 0: highs.append(h)
     
     if len(lows) < 50: return None
     
     n = len(lows)
+    
+    # ----------------------------------------
+    # 1. ANA DESTEK HESAPLAMASI (Dipleri baz alır)
+    # ----------------------------------------
     min_idx1, min_val1 = 0, lows[0]
     limit_low = int(n * 0.3)
     for i in range(limit_low):
@@ -692,29 +721,56 @@ def calculate_trend_levels(raw_data):
     support_slope = (lows[min_idx2] - lows[min_idx1]) / (min_idx2 - min_idx1) if min_idx2 != min_idx1 else 0
     current_support = lows[min_idx1] + support_slope * (n - 1 - min_idx1)
     
-    # YENİ KOD: Tüm zamanlarda destek altına en fazla ne kadar sarkmış?
+    # Destek Altı Max Sarkma Hesabı
     max_dip_percent = 0.0
-    
     for i in range(n):
-        # O günkü destek seviyesi teorik olarak neydi?
         date_support_val = lows[min_idx1] + support_slope * (i - min_idx1)
-        
-        # Eğer teorik destek değeri mantıklıysa (negatif değilse)
         if date_support_val > 0:
             diff = lows[i] - date_support_val
-            # Eğer fiyat desteğin altındaysa (diff negatif)
+            # Eğer o günkü düşük fiyat, desteğin altındaysa (diff negatif)
             if diff < 0:
                 dip_pct = (diff / date_support_val) * 100
-                if dip_pct < max_dip_percent: # En küçük (en derin) negatifi arıyoruz
+                if dip_pct < max_dip_percent: # En derin çukuru bul
                     max_dip_percent = dip_pct
+                    
+    # ----------------------------------------
+    # 2. ANA DİRENÇ HESAPLAMASI (Tepeleri baz alır)
+    # ----------------------------------------
+    max_idx1, max_val1 = 0, highs[0]
+    for i in range(limit_low):
+        if highs[i] > max_val1: max_val1, max_idx1 = highs[i], i
+        
+    max_idx2, max_val2 = n - 1, highs[n - 1]
+    for i in range(n - 1, limit_high, -1):
+        if highs[i] > max_val2: max_val2, max_idx2 = highs[i], i
+        
+    resistance_slope = (highs[max_idx2] - highs[max_idx1]) / (max_idx2 - max_idx1) if max_idx2 != max_idx1 else 0
+    current_resistance = highs[max_idx1] + resistance_slope * (n - 1 - max_idx1)
+    
+    # Direnç Üstü Max Çıkış (Breakout) Hesabı
+    max_breakout_percent = 0.0
+    for i in range(n):
+        date_res_val = highs[max_idx1] + resistance_slope * (i - max_idx1)
+        if date_res_val > 0:
+            diff = highs[i] - date_res_val
+            # Eğer o günkü yüksek fiyat, direncin üzerindeyse (diff pozitif)
+            if diff > 0: 
+                brk_pct = (diff / date_res_val) * 100
+                if brk_pct > max_breakout_percent: # En yüksek taşıyışı bul
+                    max_breakout_percent = brk_pct
 
-    return {'currentSupport': current_support, 'maxDip': max_dip_percent}
+    return {
+        'currentSupport': current_support, 'maxDip': max_dip_percent,
+        'currentResistance': current_resistance, 'maxBreakout': max_breakout_percent
+    }
 
 def process_batch_symbol(symbol):
     market_info = fetch_market_info(symbol)
     chart_data = fetch_chart_data(symbol)
     support_val = None
     max_dip_val = None
+    resistance_val = None
+    max_breakout_val = None
     
     if chart_data and len(chart_data) >= 50:
         trend_data = calculate_trend_levels(chart_data)
@@ -723,7 +779,11 @@ def process_batch_symbol(symbol):
                 support_val = round(trend_data['currentSupport'], 2)
             max_dip_val = round(trend_data['maxDip'], 2)
             
-    return symbol, market_info, support_val, max_dip_val
+            if trend_data['currentResistance'] > 0:
+                resistance_val = round(trend_data['currentResistance'], 2)
+            max_breakout_val = round(trend_data['maxBreakout'], 2)
+            
+    return symbol, market_info, support_val, max_dip_val, resistance_val, max_breakout_val
 
 # --- ROTAS ---
 
@@ -752,14 +812,16 @@ def api_chart():
 def api_batch_all():
     symbols_param = request.args.get('symbols', '')
     if not symbols_param:
-        return jsonify({'markets': {}, 'supports': {}, 'dips': {}})
+        return jsonify({'markets': {}, 'supports': {}, 'dips': {}, 'resistances': {}, 'breakouts': {}})
         
     symbols = [s for s in symbols_param.split(',') if s]
     markets = {}
     supports = {}
     dips = {}
+    resistances = {}
+    breakouts = {}
     
-    # Gevent Pool kullanımı (ThreadPoolExecutor yerine)
+    # Gevent Pool kullanımı
     pool = Pool(10)
     jobs = [pool.spawn(process_batch_symbol, sym) for sym in symbols]
     gevent.joinall(jobs)
@@ -767,13 +829,15 @@ def api_batch_all():
     for job in jobs:
         try:
             if job.value:
-                sym, mkt, sup, dip = job.value
+                sym, mkt, sup, dip, res, brk = job.value
                 if mkt: markets[sym] = mkt
                 if sup: supports[sym] = sup
                 if dip is not None: dips[sym] = dip
+                if res: resistances[sym] = res
+                if brk is not None: breakouts[sym] = brk
         except: pass
                 
-    return jsonify({'markets': markets, 'supports': supports, 'dips': dips})
+    return jsonify({'markets': markets, 'supports': supports, 'dips': dips, 'resistances': resistances, 'breakouts': breakouts})
 
 if __name__ == '__main__':
     # SSL uyarısını gizle
