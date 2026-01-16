@@ -398,7 +398,7 @@ def get_data_from_ideal(url):
             return json.loads(r.content.decode('iso-8859-9'))
     except: return None
 
-# --- GELİŞMİŞ TREND ALGORİTMASI ---
+# --- GELİŞMİŞ TREND ALGORİTMASI (Hata Düzeltmeleri Dahil) ---
 def calc_trend_advanced(candles):
     highs = []
     lows = []
@@ -425,9 +425,11 @@ def calc_trend_advanced(candles):
         if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
             local_min_indices.append(i)
     
+    # HATA ÇÖZÜMÜ BURADA: Değişkenleri her iki durumda da tanımlıyoruz
     if len(local_min_indices) < 2:
         support_val = min(lows)
         support_slope = 0
+        current_support = support_val # EKLENDİ: Değişken tanımlandı
     else:
         sum_x = sum(local_min_indices)
         sum_y = sum([lows[i] for i in local_min_indices])
@@ -463,9 +465,11 @@ def calc_trend_advanced(candles):
         if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
             local_max_indices.append(i)
             
+    # HATA ÇÖZÜMÜ BURADA DA UYGULANDI
     if len(local_max_indices) < 2:
         res_val = max(highs)
         res_slope = 0
+        current_resistance = res_val # EKLENDİ
     else:
         sum_x = sum(local_max_indices)
         sum_y = sum([highs[i] for i in local_max_indices])
