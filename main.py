@@ -315,7 +315,7 @@ HTML_TEMPLATE = """
                 const changeSign = change > 0 ? '+' : '';
 
                 const supportLevel = supportCache[symbol];
-                const supportDist = supportLevel && price > 0 ? (((price - supportLevel) / price) * 100).toFixed(2) : '-';
+                const supportDist = supportLevel && supportLevel > 0 ? (((price - supportLevel) / supportLevel) * 100).toFixed(2) : '-';
                 
                 const supportColor = supportDist > 0 ? '#10b981' : (supportDist < 0 ? '#ef4444' : '#666');
 
