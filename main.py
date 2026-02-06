@@ -10,6 +10,12 @@ import gevent
 from gevent.pool import Pool
 import time
 
+# --- YENİ EKLENEN AYAR: SİTE ADRESİ ---
+# BURAYA Render.com'daki sitenin tam adresini yazmalısın.
+# Örnek: "https://borsa-takip-uygulamam.onrender.com"
+RENDER_APP_URL = "https://xu-w1xg.onrender.com"
+# --------------------------------------
+
 app = Flask(__name__)
 
 # --- AYARLAR VE SABİTLER ---
@@ -506,16 +512,14 @@ HTML_TEMPLATE = """
             if (cupDepth <= 0 || (bottomIdx - leftPeakIdx) < 10 || (rightPeakIdx - bottomIdx) < 10) return null;
             const targetVal = leftPeakVal + cupDepth;
 
-            // --- KULP (HANDLE) TESPİTİ EKLENDİ ---
+            // --- KULP (HANDLE) TESPİTİ ---
             let handleTrace = null;
             let handleBottomVal = Infinity, handleBottomIdx = -1;
             
-            // Sağ tepeden sonraki en düşük noktayı bul (Kulp dibi)
             if (n - rightPeakIdx > 3) {
                  for (let i = rightPeakIdx; i < n; i++) {
                      if (lows[i] < handleBottomVal) { handleBottomVal = lows[i]; handleBottomIdx = i; }
                  }
-                 // Eğer anlamlı bir kulp varsa (Çok derin değilse) çiz
                  if (handleBottomIdx > rightPeakIdx && handleBottomVal > bottomVal) {
                      handleTrace = {
                         x: [dates[rightPeakIdx], dates[handleBottomIdx], dates[n-1]],
@@ -527,7 +531,6 @@ HTML_TEMPLATE = """
                      };
                  }
             }
-            // ------------------------------------
 
             const extendedDates = [...dates];
             const projectionDays = 90;
@@ -542,7 +545,7 @@ HTML_TEMPLATE = """
                 cup: { x: [dates[leftPeakIdx], dates[bottomIdx], dates[rightPeakIdx]], y: [leftPeakVal, bottomVal, highs[rightPeakIdx]], type: 'scatter', mode: 'lines', name: 'Çanak', line: { color: '#a855f7', width: 4, shape: 'spline' } },
                 target: { x: [dates[leftPeakIdx], extendedDates[extendedDates.length - 1]], y: [targetVal, targetVal], type: 'scatter', mode: 'lines', name: `Katlama: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
                 base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } },
-                handle: handleTrace // Yeni eklenen Kulp çizimi
+                handle: handleTrace
             };
         }
 
@@ -598,7 +601,7 @@ HTML_TEMPLATE = """
                 allTraces.push(cupPattern.cup); 
                 allTraces.push(cupPattern.target); 
                 allTraces.push(cupPattern.base);
-                if (cupPattern.handle) allTraces.push(cupPattern.handle); // Kulpu ekle
+                if (cupPattern.handle) allTraces.push(cupPattern.handle);
             }
 
             const layout = {
@@ -644,7 +647,6 @@ def fetch_stock_scanner_data():
     }
 
     try:
-        # Timeout'u biraz artırdık ve verify=True bıraktık (TradingView için SSL gerekli)
         response = requests.post(TRADINGVIEW_SCANNER_URL, headers=HEADERS, json=post_data, timeout=45)
         if response.status_code == 200:
             return response.json()
@@ -720,6 +722,27 @@ def process_batch_symbol(symbol):
             support_val = round(trend_data['currentSupport'], 2)
     return symbol, market_info, support_val
 
+# --- YENİ EKLENEN: KEEP-ALIVE FONKSİYONU ---
+def keep_alive_pinger():
+    """
+    Render.com Free Tier uyku modunu engellemek için her 10 dakikada bir
+    kendi kendine istek atar.
+    """
+    print(f"Keep-Alive servisi başlatıldı. Hedef: {RENDER_APP_URL}")
+    while True:
+        # 600 saniye = 10 dakika bekle
+        gevent.sleep(600)
+        try:
+            if "SENIN-UYGULAMANIN-ISMI" in RENDER_APP_URL:
+                print("UYARI: RENDER_APP_URL değişkenini güncellemedin! Self-ping çalışmıyor.")
+                continue
+                
+            print(f"[{time.strftime('%H:%M:%S')}] Kendine ping atılıyor: {RENDER_APP_URL}")
+            # Timeout kısa tutulur ki döngüyü kilitlemesin
+            requests.get(RENDER_APP_URL, timeout=5)
+        except Exception as e:
+            print(f"Keep-Alive ping hatası: {e}")
+
 # --- ROTAS ---
 
 @app.route('/')
@@ -753,7 +776,6 @@ def api_batch_all():
     markets = {}
     supports = {}
     
-    # Gevent Pool kullanımı (ThreadPoolExecutor yerine)
     pool = Pool(10)
     jobs = [pool.spawn(process_batch_symbol, sym) for sym in symbols]
     gevent.joinall(jobs)
@@ -772,5 +794,9 @@ if __name__ == '__main__':
     # SSL uyarısını gizle
     requests.packages.urllib3.disable_warnings()
     from gevent.pywsgi import WSGIServer
+    
+    # Keep-Alive işlemini arka planda (Greenlet olarak) başlat
+    gevent.spawn(keep_alive_pinger)
+    
     http_server = WSGIServer(('0.0.0.0', 8080), app)
     http_server.serve_forever()
