@@ -506,6 +506,29 @@ HTML_TEMPLATE = """
             if (cupDepth <= 0 || (bottomIdx - leftPeakIdx) < 10 || (rightPeakIdx - bottomIdx) < 10) return null;
             const targetVal = leftPeakVal + cupDepth;
 
+            // --- KULP (HANDLE) TESPİTİ EKLENDİ ---
+            let handleTrace = null;
+            let handleBottomVal = Infinity, handleBottomIdx = -1;
+            
+            // Sağ tepeden sonraki en düşük noktayı bul (Kulp dibi)
+            if (n - rightPeakIdx > 3) {
+                 for (let i = rightPeakIdx; i < n; i++) {
+                     if (lows[i] < handleBottomVal) { handleBottomVal = lows[i]; handleBottomIdx = i; }
+                 }
+                 // Eğer anlamlı bir kulp varsa (Çok derin değilse) çiz
+                 if (handleBottomIdx > rightPeakIdx && handleBottomVal > bottomVal) {
+                     handleTrace = {
+                        x: [dates[rightPeakIdx], dates[handleBottomIdx], dates[n-1]],
+                        y: [highs[rightPeakIdx], handleBottomVal, highs[n-1]], 
+                        type: 'scatter', 
+                        mode: 'lines', 
+                        name: 'Fincan Kulp', 
+                        line: { color: '#d946ef', width: 3, shape: 'spline', dash: 'dot' }
+                     };
+                 }
+            }
+            // ------------------------------------
+
             const extendedDates = [...dates];
             const projectionDays = 90;
             const lastDate = new Date(dates[dates.length - 1]);
@@ -518,7 +541,8 @@ HTML_TEMPLATE = """
             return {
                 cup: { x: [dates[leftPeakIdx], dates[bottomIdx], dates[rightPeakIdx]], y: [leftPeakVal, bottomVal, highs[rightPeakIdx]], type: 'scatter', mode: 'lines', name: 'Çanak', line: { color: '#a855f7', width: 4, shape: 'spline' } },
                 target: { x: [dates[leftPeakIdx], extendedDates[extendedDates.length - 1]], y: [targetVal, targetVal], type: 'scatter', mode: 'lines', name: `Katlama: ${targetVal.toFixed(2)}₺`, line: { color: '#ec4899', width: 2, dash: 'dashdot' } },
-                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } }
+                base: { x: [dates[leftPeakIdx], dates[rightPeakIdx]], y: [leftPeakVal, leftPeakVal], type: 'scatter', mode: 'lines', name: 'Boyun Hattı', line: { color: '#6366f1', width: 1, dash: 'dot' } },
+                handle: handleTrace // Yeni eklenen Kulp çizimi
             };
         }
 
@@ -570,7 +594,12 @@ HTML_TEMPLATE = """
             };
 
             const allTraces = [trace1, mainTrends.absolutePeak, mainTrends.resistance, mainTrends.support, mainTrends.midTrend, traceLastPrice];
-            if (cupPattern) { allTraces.push(cupPattern.cup); allTraces.push(cupPattern.target); allTraces.push(cupPattern.base); }
+            if (cupPattern) { 
+                allTraces.push(cupPattern.cup); 
+                allTraces.push(cupPattern.target); 
+                allTraces.push(cupPattern.base);
+                if (cupPattern.handle) allTraces.push(cupPattern.handle); // Kulpu ekle
+            }
 
             const layout = {
                 title: { text: `${symbol} - Fiyat Grafiği` },
