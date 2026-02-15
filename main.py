@@ -1,6 +1,7 @@
 from gevent import monkey; monkey.patch_all()
 import sys
-# Rekürsiyon limitini artırıyoruz (Garanti olsun diye)
+import os  # Port ayarı için gerekli
+# Rekürsiyon limitini artırıyoruz
 sys.setrecursionlimit(2000)
 
 from flask import Flask, request, jsonify, render_template_string
@@ -9,16 +10,15 @@ import json
 import gevent
 from gevent.pool import Pool
 import time
+from gevent.pywsgi import WSGIServer
 
-# --- YENİ EKLENEN AYAR: SİTE ADRESİ ---
-# BURAYA Render.com'daki sitenin tam adresini yazmalısın.
-# Örnek: "https://borsa-takip-uygulamam.onrender.com"
-RENDER_APP_URL = "https://xu-w1xg.onrender.com"
-# --------------------------------------
+# --- AYARLAR ---
+# Render.com'daki sitenin tam adresi (Sonunda / olmamasına dikkat et)
+RENDER_APP_URL = "https://xu-w1xg.onrender.com" 
 
 app = Flask(__name__)
 
-# --- AYARLAR VE SABİTLER ---
+# --- SABİTLER ---
 IDEAL_DATA_URL = "https://atayi.idealdata.com.tr:3000"
 TRADINGVIEW_SCANNER_URL = "https://scanner.tradingview.com/turkey/scan?label-product=markets-screener"
 
@@ -722,26 +722,33 @@ def process_batch_symbol(symbol):
             support_val = round(trend_data['currentSupport'], 2)
     return symbol, market_info, support_val
 
-# --- YENİ EKLENEN: KEEP-ALIVE FONKSİYONU ---
+# --- YENİ EKLENEN: SAĞLIK VE PING SİSTEMİ ---
+@app.route('/health')
+def health_check():
+    """Hafif sağlık kontrolü rotası"""
+    return "OK", 200
+
 def keep_alive_pinger():
     """
-    Render.com Free Tier uyku modunu engellemek için her 10 dakikada bir
-    kendi kendine istek atar.
+    Sadece /health rotasını çağırarak sunucuyu meşgul tutar.
+    HTML render etmez, veritabanı yormaz.
     """
-    print(f"Keep-Alive servisi başlatıldı. Hedef: {RENDER_APP_URL}")
+    print(f"Keep-Alive servisi başlatıldı. Hedef: {RENDER_APP_URL}/health")
+    
+    # Render 15 dk (900 sn) uyku süresi verir. 10 dk (600 sn) idealdir.
+    interval = 600 
+    
     while True:
-        # 600 saniye = 10 dakika bekle
-        gevent.sleep(600)
+        gevent.sleep(interval)
         try:
-            if "SENIN-UYGULAMANIN-ISMI" in RENDER_APP_URL:
-                print("UYARI: RENDER_APP_URL değişkenini güncellemedin! Self-ping çalışmıyor.")
-                continue
-                
-            print(f"[{time.strftime('%H:%M:%S')}] Kendine ping atılıyor: {RENDER_APP_URL}")
-            # Timeout kısa tutulur ki döngüyü kilitlemesin
-            requests.get(RENDER_APP_URL, timeout=5)
+            target_url = f"{RENDER_APP_URL}/health"
+            print(f"[{time.strftime('%H:%M:%S')}] Ping atılıyor: {target_url}")
+            
+            # Timeout kısa tutulur
+            requests.get(target_url, timeout=10)
+            print(f"[{time.strftime('%H:%M:%S')}] Ping başarılı.")
         except Exception as e:
-            print(f"Keep-Alive ping hatası: {e}")
+            print(f"[{time.strftime('%H:%M:%S')}] Ping hatası: {e}")
 
 # --- ROTAS ---
 
@@ -793,10 +800,13 @@ def api_batch_all():
 if __name__ == '__main__':
     # SSL uyarısını gizle
     requests.packages.urllib3.disable_warnings()
-    from gevent.pywsgi import WSGIServer
     
-    # Keep-Alive işlemini arka planda (Greenlet olarak) başlat
+    # Keep-Alive işlemini arka planda başlat
     gevent.spawn(keep_alive_pinger)
     
-    http_server = WSGIServer(('0.0.0.0', 8080), app)
+    # Render'ın verdiği portu dinamik al, yoksa 10000 kullan
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Sunucu {port} portunda başlatılıyor...")
+    
+    http_server = WSGIServer(('0.0.0.0', port), app)
     http_server.serve_forever()
